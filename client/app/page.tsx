@@ -1,17 +1,14 @@
-import Container from "@/components/layout/Container";
+import Navbar from "@/components/layout/Navbar";
+import Hero from "@/components/sections/Hero";
 
 export default function Home() {
   return (
-    <main>
-      <Container>
-        <h1 className="text-4xl font-bold">
-          Welcome to KnowFlow
-        </h1>
+    <>
+      <Navbar />
 
-        <p className="mt-4 text-gray-600">
-          Day 3 - Container Component
-        </p>
-      </Container>
-    </main>
+      <main>
+        <Hero />
+      </main>
+    </>
   );
 }
