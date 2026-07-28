@@ -1,3 +1,8 @@
+import { colors } from "@/styles/colors";
+import { radius } from "@/styles/radius";
+import { spacing } from "@/styles/spacing";
+
+
 type ButtonProps = {
   children: React.ReactNode;
 };
@@ -6,11 +11,11 @@ export default function Button({ children }: ButtonProps) {
   return (
     <button
       style={{
-        backgroundColor: "#2563EB",
-        color: "#FFFFFF",
+        backgroundColor: colors.primary,
+        color: colors.text,
         border: "none",
-        padding: "14px 28px",
-        borderRadius: "8px",
+        padding: `${spacing.md} ${spacing.xl}`,
+        borderRadius: radius.md,
         cursor: "pointer",
         fontSize: "16px",
         fontWeight: 600,
