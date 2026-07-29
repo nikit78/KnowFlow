@@ -3,48 +3,57 @@ import FeatureCard from "../common/FeatureCard";
 
 const features = [
   {
-    title: "AI Search",
+    number: "01",
+    title: "AI-powered search",
     description:
-      "Find the right note, idea, or piece of information without digging through folders.",
+      "Find the exact note, idea, or document you need without digging through folders.",
+    icon: "⌕",
   },
   {
-    title: "Smart Organization",
+    number: "02",
+    title: "Connected knowledge",
     description:
-      "Keep your knowledge structured and connected so important ideas are easier to revisit.",
+      "Keep related notes, documents, and ideas connected so your knowledge grows with you.",
+    icon: "◈",
   },
   {
-    title: "Secure Storage",
+    number: "03",
+    title: "A calmer workspace",
     description:
-      "Keep your personal knowledge in a secure workspace designed around privacy and control.",
+      "A focused workspace designed to help you think clearly instead of managing another complicated tool.",
+    icon: "✦",
   },
 ];
 
 export default function Features() {
   return (
-    <section className="border-b border-white/5 py-24 md:py-28">
+    <section
+      id="features"
+      className="border-b border-white/5 py-24 md:py-28"
+    >
       <Container>
         <div className="max-w-2xl">
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-blue-400">
-            Core features
-          </p>
+          <span className="text-xs font-semibold uppercase tracking-[0.25em] text-blue-400">
+            Why KnowFlow
+          </span>
 
-          <h2 className="text-3xl font-bold tracking-tight text-zinc-100 sm:text-4xl">
-            Everything you need to
-            <span className="text-zinc-500">
-              {" "}work with your knowledge.
-            </span>
+          <h2 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-100 sm:text-4xl">
+            Everything you need to make
+            <span className="text-zinc-500"> knowledge useful.</span>
           </h2>
 
-          <p className="mt-5 max-w-xl text-base leading-7 text-zinc-400">
-            KnowFlow brings your notes, ideas, and information
-            into a workspace that feels simple to use and easy to grow.
+          <p className="mt-5 max-w-xl text-base leading-7 text-zinc-500">
+            KnowFlow brings your notes, documents, and ideas into one
+            connected workspace built around how you actually think.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-5 md:grid-cols-3">
+        <div className="mt-14 grid gap-5 md:grid-cols-3">
           {features.map((feature) => (
             <FeatureCard
-              key={feature.title}
+              key={feature.number}
+              number={feature.number}
+              icon={feature.icon}
               title={feature.title}
               description={feature.description}
             />

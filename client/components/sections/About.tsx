@@ -1,172 +1,164 @@
 import Container from "../layout/Container";
 
-const highlights = [
+const points = [
   {
-    number: "01",
-    title: "Capture",
+    title: "Capture without friction",
     description:
-      "Save notes, documents, ideas, and useful information without breaking your flow.",
+      "Save thoughts, notes, and useful information without breaking your flow.",
   },
   {
-    number: "02",
-    title: "Connect",
+    title: "Connect what matters",
     description:
-      "Bring related information together so your knowledge becomes easier to navigate.",
+      "Turn scattered information into a connected knowledge base you can actually use.",
   },
   {
-    number: "03",
-    title: "Discover",
+    title: "Ask instead of searching",
     description:
-      "Use intelligent search and AI assistance to find answers when you need them.",
+      "Use your knowledge with natural questions instead of remembering where everything lives.",
   },
 ];
 
 export default function About() {
   return (
-    <section id="about" className="border-b border-white/5 py-24 md:py-32">
+    <section
+      id="about"
+      className="border-b border-white/5 py-24 md:py-32"
+    >
       <Container>
-        <div className="grid gap-14 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+        <div className="grid items-center gap-14 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-400">
-              About KnowFlow
-            </p>
+            <span className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-400">
+              Built around your thinking
+            </span>
 
-            <h2 className="mt-5 text-3xl font-bold tracking-tight text-zinc-100 sm:text-4xl md:text-5xl">
-              A calmer way to
-              <span className="text-zinc-500"> manage what you know.</span>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-100 sm:text-4xl">
+              Your knowledge should feel
+              <span className="text-zinc-500"> connected.</span>
             </h2>
 
-            <p className="mt-6 max-w-xl text-base leading-7 text-zinc-400">
-              KnowFlow brings your notes, documents, ideas, and AI assistance
-              into one connected workspace. Instead of jumping between
-              different tools, your knowledge stays together and grows with
-              you.
+            <p className="mt-6 text-base leading-7 text-zinc-500">
+              Most productivity tools help you store information. KnowFlow
+              goes one step further by helping you connect, understand, and
+              reuse the knowledge you already have.
             </p>
 
-            <div className="mt-9 flex items-center gap-4">
-              <div className="h-px w-12 bg-blue-400/60" />
+            <div className="mt-9 space-y-6">
+              {points.map((point, index) => (
+                <div key={point.title} className="flex gap-4">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-xs font-medium text-zinc-400">
+                    {String(index + 1).padStart(2, "0")}
+                  </div>
 
-              <p className="text-sm text-zinc-500">
-                Capture. Connect. Discover.
-              </p>
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-200">
+                      {point.title}
+                    </h3>
+
+                    <p className="mt-1.5 text-sm leading-6 text-zinc-500">
+                      {point.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
           <div className="relative">
-            <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-blue-500/5 blur-2xl" />
+            <div className="absolute -inset-6 -z-10 rounded-[2rem] bg-cyan-400/[0.04] blur-3xl" />
 
-            <div className="overflow-hidden rounded-3xl border border-white/10 bg-[#111113] shadow-2xl">
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111113] shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
               <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" />
+                <div>
+                  <p className="text-xs text-zinc-600">
+                    Knowledge graph
+                  </p>
+
+                  <p className="mt-1 text-sm font-medium text-zinc-200">
+                    Project research
+                  </p>
                 </div>
 
-                <span className="text-xs text-zinc-600">
-                  KnowFlow Workspace
+                <span className="rounded-full border border-cyan-400/10 bg-cyan-400/[0.05] px-2.5 py-1 text-[10px] text-cyan-300">
+                  Connected
                 </span>
               </div>
 
-              <div className="grid min-h-[360px] grid-cols-[150px_1fr]">
-                <aside className="border-r border-white/10 bg-white/[0.02] p-4">
-                  <div className="mb-7 text-sm font-semibold text-zinc-200">
-                    KnowFlow
+              <div className="relative min-h-[360px] overflow-hidden p-6">
+                <div className="absolute left-1/2 top-1/2 h-px w-[65%] -translate-x-1/2 bg-gradient-to-r from-transparent via-blue-400/20 to-transparent" />
+
+                <div className="absolute left-1/2 top-[34%] h-[48%] w-px -translate-x-1/2 bg-cyan-400/10" />
+
+                <div className="absolute left-[28%] top-[30%] h-px w-[45%] rotate-[20deg] bg-white/5" />
+
+                <div className="absolute left-[28%] top-[70%] h-px w-[45%] -rotate-[20deg] bg-white/5" />
+
+                <div className="absolute left-1/2 top-1/2 flex h-24 w-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl border border-blue-400/20 bg-blue-400/[0.07] text-center shadow-[0_0_40px_rgba(79,107,255,0.08)]">
+                  <div>
+                    <div className="mx-auto h-2 w-2 rounded-full bg-blue-400" />
+                    <p className="mt-2 text-xs font-medium text-blue-200">
+                      Core idea
+                    </p>
                   </div>
+                </div>
 
-                  <div className="space-y-2 text-xs">
-                    <div className="rounded-lg bg-blue-500/10 px-3 py-2 text-blue-300">
-                      All Notes
-                    </div>
+                <div className="absolute left-[10%] top-[18%] rounded-xl border border-white/10 bg-[#18181B] px-4 py-3">
+                  <p className="text-[10px] text-zinc-600">
+                    Note
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-300">
+                    Product vision
+                  </p>
+                </div>
 
-                    <div className="px-3 py-2 text-zinc-500">
-                      Projects
-                    </div>
+                <div className="absolute right-[8%] top-[25%] rounded-xl border border-white/10 bg-[#18181B] px-4 py-3">
+                  <p className="text-[10px] text-zinc-600">
+                    Document
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-300">
+                    Research notes
+                  </p>
+                </div>
 
-                    <div className="px-3 py-2 text-zinc-500">
-                      Ideas
-                    </div>
+                <div className="absolute bottom-[18%] left-[12%] rounded-xl border border-white/10 bg-[#18181B] px-4 py-3">
+                  <p className="text-[10px] text-zinc-600">
+                    Idea
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-300">
+                    User insights
+                  </p>
+                </div>
 
-                    <div className="px-3 py-2 text-zinc-500">
-                      Documents
-                    </div>
-                  </div>
-                </aside>
+                <div className="absolute bottom-[15%] right-[10%] rounded-xl border border-white/10 bg-[#18181B] px-4 py-3">
+                  <p className="text-[10px] text-zinc-600">
+                    AI insight
+                  </p>
+                  <p className="mt-1 text-xs text-cyan-300">
+                    4 connections found
+                  </p>
+                </div>
+              </div>
+            </div>
 
-                <div className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-zinc-500">
-                        Knowledge workspace
-                      </p>
+            <div className="absolute -bottom-5 left-6 rounded-xl border border-white/10 bg-[#18181B] px-4 py-3 shadow-xl">
+              <div className="flex items-center gap-3">
+                <div className="flex -space-x-1.5">
+                  <span className="h-6 w-6 rounded-full border-2 border-[#18181B] bg-blue-400/40" />
+                  <span className="h-6 w-6 rounded-full border-2 border-[#18181B] bg-cyan-400/30" />
+                  <span className="h-6 w-6 rounded-full border-2 border-[#18181B] bg-violet-400/30" />
+                </div>
 
-                      <h3 className="mt-1 text-lg font-semibold text-zinc-100">
-                        Your second brain
-                      </h3>
-                    </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-200">
+                    24 connections
+                  </p>
 
-                    <div className="rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-400">
-                      Search
-                    </div>
-                  </div>
-
-                  <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                      <div className="mb-4 h-2 w-16 rounded-full bg-blue-400/40" />
-                      <div className="h-2 w-full rounded-full bg-white/5" />
-                      <div className="mt-2 h-2 w-4/5 rounded-full bg-white/5" />
-                      <div className="mt-5 text-[11px] text-zinc-600">
-                        Product ideas
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                      <div className="mb-4 h-2 w-20 rounded-full bg-cyan-400/30" />
-                      <div className="h-2 w-full rounded-full bg-white/5" />
-                      <div className="mt-2 h-2 w-3/5 rounded-full bg-white/5" />
-                      <div className="mt-5 text-[11px] text-zinc-600">
-                        Research notes
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 sm:col-span-2">
-                      <div className="mb-4 flex items-center justify-between">
-                        <div className="h-2 w-24 rounded-full bg-violet-400/30" />
-                        <div className="h-5 w-16 rounded-md bg-white/5" />
-                      </div>
-
-                      <div className="h-2 w-full rounded-full bg-white/5" />
-                      <div className="mt-2 h-2 w-11/12 rounded-full bg-white/5" />
-                      <div className="mt-2 h-2 w-2/3 rounded-full bg-white/5" />
-                    </div>
-                  </div>
+                  <p className="text-[10px] text-zinc-600">
+                    discovered this week
+                  </p>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-
-        <div className="mt-20 grid border-y border-white/10 md:grid-cols-3">
-          {highlights.map((item, index) => (
-            <div
-              key={item.number}
-              className={`py-7 md:px-7 ${
-                index !== 0 ? "border-t border-white/10 md:border-l md:border-t-0" : ""
-              }`}
-            >
-              <span className="text-xs font-semibold tracking-widest text-blue-400">
-                {item.number}
-              </span>
-
-              <h3 className="mt-3 text-lg font-semibold text-zinc-100">
-                {item.title}
-              </h3>
-
-              <p className="mt-2 text-sm leading-6 text-zinc-500">
-                {item.description}
-              </p>
-            </div>
-          ))}
         </div>
       </Container>
     </section>
