@@ -7,7 +7,13 @@ export const typography = {
 
   h3: "28px",
 
-  body: "18px",
+  h4: "22px",
+
+  bodyLarge: "18px",
+
+  body: "16px",
 
   small: "14px",
+
+  caption: "12px",
 };
