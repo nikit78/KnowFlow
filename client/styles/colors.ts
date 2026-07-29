@@ -1,15 +1,25 @@
 export const colors = {
-  primary: "#2563EB",
+  background: "#09090B",
 
-  background: "#0F172A",
+  surface: "#111113",
 
-  surface: "#111827",
+  surfaceElevated: "#18181B",
 
-  text: "#F9FAFB",
+  primary: "#4F6BFF",
 
-  textSecondary: "#9CA3AF",
+  primaryHover: "#4058E8",
 
-  border: "#374151",
+  accent: "#22D3EE",
+
+  text: "#F4F4F5",
+
+  textSecondary: "#A1A1AA",
+
+  textMuted: "#71717A",
+
+  border: "#27272A",
+
+  borderStrong: "#3F3F46",
 
   success: "#22C55E",
 

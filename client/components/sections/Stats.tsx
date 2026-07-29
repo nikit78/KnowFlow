@@ -21,19 +21,21 @@ const stats = [
 
 export default function Stats() {
   return (
-    <section className="py-24">
+    <section className="border-b border-white/5 py-16 md:py-20">
       <Container>
-        <div className="grid gap-8 grid-cols-2 md:grid-cols-4">
-          {stats.map((item) => (
+        <div className="grid grid-cols-2 md:grid-cols-4">
+          {stats.map((item, index) => (
             <div
               key={item.label}
-              className="rounded-2xl border border-gray-800 p-8 text-center"
+              className={`px-5 py-6 text-center md:px-8 ${
+                index !== 0 ? "border-l border-white/10" : ""
+              }`}
             >
-              <h3 className="text-4xl font-bold text-white">
+              <p className="text-3xl font-bold tracking-tight text-zinc-100 sm:text-4xl">
                 {item.value}
-              </h3>
+              </p>
 
-              <p className="mt-3 text-gray-400">
+              <p className="mt-2 text-xs uppercase tracking-wider text-zinc-500 sm:text-sm">
                 {item.label}
               </p>
             </div>
