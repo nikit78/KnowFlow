@@ -1,6 +1,8 @@
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import express from "express";
+
 import { connectDatabase } from "./config/database.js";
 import authRoutes from "./routes/authRoutes.js";
 
@@ -11,15 +13,18 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
 
+// Middleware
 app.use(
   cors({
     origin: CLIENT_URL,
     credentials: true,
-  }),
+  })
 );
 
 app.use(express.json());
+app.use(cookieParser());
 
+// Routes
 app.use("/api/auth", authRoutes);
 
 app.get("/api/health", (_req, res) => {
@@ -29,6 +34,7 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+// Start Server
 const startServer = async (): Promise<void> => {
   await connectDatabase();
 
