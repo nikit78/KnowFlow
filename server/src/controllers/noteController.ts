@@ -34,7 +34,7 @@ export const createNote = async (
       note,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Create Note Error:", error);
 
     res.status(500).json({
       success: false,
@@ -54,6 +54,7 @@ export const getNotes = async (
     const notes = await Note.find({
       user: req.user!._id,
     }).sort({
+      isPinned: -1,
       createdAt: -1,
     });
 
@@ -63,7 +64,7 @@ export const getNotes = async (
       notes,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Get Notes Error:", error);
 
     res.status(500).json({
       success: false,
@@ -98,7 +99,7 @@ export const getNoteById = async (
       note,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Get Note Error:", error);
 
     res.status(500).json({
       success: false,
@@ -115,7 +116,13 @@ export const updateNote = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { title, content, color, tags, isPinned } = req.body;
+    const {
+      title,
+      content,
+      color,
+      tags,
+      isPinned,
+    } = req.body || {};
 
     const note = await Note.findOne({
       _id: req.params.id,
@@ -130,11 +137,11 @@ export const updateNote = async (
       return;
     }
 
-    note.title = title ?? note.title;
-    note.content = content ?? note.content;
-    note.color = color ?? note.color;
-    note.tags = tags ?? note.tags;
-    note.isPinned = isPinned ?? note.isPinned;
+    if (title !== undefined) note.title = title;
+    if (content !== undefined) note.content = content;
+    if (color !== undefined) note.color = color;
+    if (tags !== undefined) note.tags = tags;
+    if (isPinned !== undefined) note.isPinned = isPinned;
 
     await note.save();
 
@@ -144,7 +151,7 @@ export const updateNote = async (
       note,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Update Note Error:", error);
 
     res.status(500).json({
       success: false,
@@ -181,7 +188,49 @@ export const deleteNote = async (
       message: "Note deleted successfully",
     });
   } catch (error) {
-    console.error(error);
+    console.error("Delete Note Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// Pin / Unpin Note
+// ==========================
+export const togglePinNote = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const note = await Note.findOne({
+      _id: req.params.id,
+      user: req.user!._id,
+    });
+
+    if (!note) {
+      res.status(404).json({
+        success: false,
+        message: "Note not found",
+      });
+      return;
+    }
+
+    note.isPinned = !note.isPinned;
+
+    await note.save();
+
+    res.status(200).json({
+      success: true,
+      message: note.isPinned
+        ? "Note pinned successfully"
+        : "Note unpinned successfully",
+      note,
+    });
+  } catch (error) {
+    console.error("Toggle Pin Error:", error);
 
     res.status(500).json({
       success: false,

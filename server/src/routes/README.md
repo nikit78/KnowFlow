@@ -1,27 +1,29 @@
 # Routes
 
-## Authentication Routes
+Routes connect HTTP requests to Controllers.
 
-POST /api/auth/register
+Current Route Files
 
-POST /api/auth/login
+## authRoutes.ts
 
-GET /api/auth/me
+Authentication Endpoints
 
-POST /api/auth/logout
+- Register
+- Login
+- Logout
+- Current User
 
 ---
 
-## Note Routes
+## noteRoutes.ts
 
-POST /api/notes
+Notes Endpoints
 
-GET /api/notes
+- Create Note
+- Get Notes
+- Get Note By ID
+- Update Note
+- Delete Note
+- Pin / Unpin Note
 
-GET /api/notes/:id
-
-PUT /api/notes/:id
-
-DELETE /api/notes/:id
-
-All note routes are protected using JWT Authentication.
+Protected routes use Authentication Middleware.

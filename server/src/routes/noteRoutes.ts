@@ -6,6 +6,7 @@ import {
   getNoteById,
    updateNote,
    deleteNote,
+   togglePinNote,
 } from "../controllers/noteController.js";
 
 import { isAuthenticated } from "../middleware/authMiddleware.js";
@@ -41,5 +42,7 @@ router.put("/:id", isAuthenticated, updateNote);
 // DELETE /api/notes/:id
 // ==========================
 router.delete("/:id", isAuthenticated, deleteNote);
+
+router.patch("/:id/pin", isAuthenticated, togglePinNote);
 
 export default router;
