@@ -1,24 +1,29 @@
 # Controllers
 
-Business logic for the application.
+Controllers contain the business logic of the application.
 
-## Authentication Controller
+Current Controllers
+
+## authController.ts
+
+Responsible for
 
 - Register User
 - Login User
 - Logout User
 - Get Current User
 
-## Note Controller
+---
+
+## noteController.ts
+
+Responsible for
 
 - Create Note
 - Get All Notes
 - Get Single Note
 - Update Note
 - Delete Note
+- Pin / Unpin Note
 
-Features
-
-- JWT Protected
-- User-specific data
-- Error Handling
+Controllers interact with Models and return API responses.

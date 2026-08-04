@@ -1,45 +1,31 @@
 # Models
 
-This folder contains all MongoDB models used in KnowFlow.
+Models define the MongoDB collections.
 
-## Current Models
+Current Models
 
-### User Model
+## User.ts
 
-Stores authentication and profile information.
+Stores
 
-Fields
-
-- name
-- email
-- password
-- avatar
-- role
-- isVerified
-
-Features
-
-- Password Hashing
-- Password Comparison
+- Name
+- Email
+- Password
+- Avatar
+- Role
+- Verification Status
 
 ---
 
-### Note Model
+## Note.ts
 
-Stores user notes.
+Stores
 
-Fields
+- Title
+- Content
+- Color
+- Tags
+- Pin Status
+- Owner(User)
 
-- title
-- content
-- color
-- isPinned
-- tags
-- user
-
-Features
-
-- References User Model
-- Automatic timestamps
-- Tag support
-- Pin support
+Models use Mongoose Schema.
