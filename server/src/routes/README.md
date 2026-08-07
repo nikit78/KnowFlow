@@ -27,3 +27,23 @@ Notes Endpoints
 - Pin / Unpin Note
 
 Protected routes use Authentication Middleware.
+
+---
+
+# Collection Routes
+
+POST /api/collections
+
+GET /api/collections
+
+PUT /api/collections/:id
+
+DELETE /api/collections/:id
+
+---
+
+# Note Routes Update
+
+GET /api/notes?collectionId=<id>
+
+Returns notes belonging to a specific collection.

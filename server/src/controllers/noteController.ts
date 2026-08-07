@@ -10,7 +10,13 @@ export const createNote = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { title, content, color, tags } = req.body;
+    const {
+      title,
+      content,
+      color,
+      tags,
+      collectionId,
+    } = req.body;
 
     if (!title) {
       res.status(400).json({
@@ -25,6 +31,7 @@ export const createNote = async (
       content,
       color,
       tags,
+      collectionId: collectionId || null,
       user: req.user!._id,
     });
 
@@ -34,7 +41,7 @@ export const createNote = async (
       note,
     });
   } catch (error) {
-    console.error("Create Note Error:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
@@ -51,12 +58,20 @@ export const getNotes = async (
   res: Response
 ): Promise<void> => {
   try {
-    const notes = await Note.find({
+    const filter: Record<string, unknown> = {
       user: req.user!._id,
-    }).sort({
-      isPinned: -1,
-      createdAt: -1,
-    });
+    };
+
+    if (req.query.collectionId) {
+      filter.collectionId = req.query.collectionId;
+    }
+
+    const notes = await Note.find(filter)
+      .populate("collectionId", "name icon color")
+      .sort({
+        isPinned: -1,
+        createdAt: -1,
+      });
 
     res.status(200).json({
       success: true,
@@ -64,7 +79,7 @@ export const getNotes = async (
       notes,
     });
   } catch (error) {
-    console.error("Get Notes Error:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
@@ -84,7 +99,7 @@ export const getNoteById = async (
     const note = await Note.findOne({
       _id: req.params.id,
       user: req.user!._id,
-    });
+    }).populate("collectionId", "name icon color");
 
     if (!note) {
       res.status(404).json({
@@ -99,7 +114,7 @@ export const getNoteById = async (
       note,
     });
   } catch (error) {
-    console.error("Get Note Error:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
@@ -122,7 +137,8 @@ export const updateNote = async (
       color,
       tags,
       isPinned,
-    } = req.body || {};
+      collectionId,
+    } = req.body;
 
     const note = await Note.findOne({
       _id: req.params.id,
@@ -137,11 +153,15 @@ export const updateNote = async (
       return;
     }
 
-    if (title !== undefined) note.title = title;
-    if (content !== undefined) note.content = content;
-    if (color !== undefined) note.color = color;
-    if (tags !== undefined) note.tags = tags;
-    if (isPinned !== undefined) note.isPinned = isPinned;
+    note.title = title ?? note.title;
+    note.content = content ?? note.content;
+    note.color = color ?? note.color;
+    note.tags = tags ?? note.tags;
+    note.isPinned = isPinned ?? note.isPinned;
+
+    if (collectionId !== undefined) {
+      note.collectionId = collectionId;
+    }
 
     await note.save();
 
@@ -151,7 +171,7 @@ export const updateNote = async (
       note,
     });
   } catch (error) {
-    console.error("Update Note Error:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
@@ -188,7 +208,7 @@ export const deleteNote = async (
       message: "Note deleted successfully",
     });
   } catch (error) {
-    console.error("Delete Note Error:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
@@ -224,13 +244,11 @@ export const togglePinNote = async (
 
     res.status(200).json({
       success: true,
-      message: note.isPinned
-        ? "Note pinned successfully"
-        : "Note unpinned successfully",
+      message: "Note pin status updated",
       note,
     });
   } catch (error) {
-    console.error("Toggle Pin Error:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
