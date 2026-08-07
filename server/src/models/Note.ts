@@ -6,7 +6,10 @@ export interface INote extends Document {
   color: string;
   isPinned: boolean;
   tags: string[];
+
   user: mongoose.Types.ObjectId;
+
+ collectionId?: mongoose.Types.ObjectId;
 }
 
 const noteSchema = new Schema<INote>(
@@ -43,6 +46,15 @@ const noteSchema = new Schema<INote>(
       ref: "User",
       required: true,
     },
+
+    // ==========================
+    // Collection Relationship
+    // ==========================
+    collectionId: {
+  type: Schema.Types.ObjectId,
+  ref: "Collection",
+  default: null,
+},
   },
   {
     timestamps: true,

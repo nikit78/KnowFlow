@@ -96,3 +96,42 @@ Notes CRUD ✔
 Pin Notes ✔
 
 Backend Stable ✔
+
+## 📂 Collections Module
+
+The Collections module helps users organize notes into logical folders, making knowledge management more structured and scalable.
+
+### Features
+
+- Create Collection
+- View All Collections
+- Update Collection
+- Delete Collection
+- Link Notes with Collections
+- Filter Notes by Collection
+- Populate Collection Details in Notes
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/collections | Create Collection |
+| GET | /api/collections | Get User Collections |
+| PUT | /api/collections/:id | Update Collection |
+| DELETE | /api/collections/:id | Delete Collection |
+
+### Database Relationship
+
+User
+
+↓
+
+Collections
+
+↓
+
+Notes
+
+Each collection belongs to one user.
+
+Each note optionally belongs to one collection.

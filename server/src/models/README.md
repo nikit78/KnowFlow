@@ -29,3 +29,35 @@ Stores
 - Owner(User)
 
 Models use Mongoose Schema.
+
+---
+
+# Collection Model
+
+Stores folders created by users.
+
+Fields:
+
+- name
+- description
+- icon
+- color
+- user
+
+Relationship:
+
+User → Collections
+
+---
+
+# Note Model Update
+
+The Note model now supports:
+
+- collectionId
+
+Relationship:
+
+Collection → Notes
+
+Each note can belong to one collection.
