@@ -50,14 +50,37 @@ User → Collections
 
 ---
 
+---
+
 # Note Model Update
 
-The Note model now supports:
+The Note model now supports Trash functionality.
 
-- collectionId
+New Fields
 
-Relationship:
+```text
+isDeleted
 
-Collection → Notes
+deletedAt
+```
 
-Each note can belong to one collection.
+Purpose
+
+- Soft Delete
+- Trash Management
+- Restore Notes
+- Future Auto Cleanup Jobs
+
+Collection Relationship
+
+```text
+User
+
+↓
+
+Collections
+
+↓
+
+Notes
+```

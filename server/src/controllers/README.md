@@ -54,3 +54,23 @@ New Features
 - Update Collection Assignment
 - Populate Collection Details
 - Filter Notes by Collection
+
+---
+
+# Trash Controller
+
+New APIs
+
+- Soft Delete Note
+- Get Trash Notes
+- Restore Note
+- Permanently Delete Note
+
+Security
+
+All APIs verify:
+
+- Authenticated User
+- Note Ownership
+
+No user can restore or permanently delete another user's note.

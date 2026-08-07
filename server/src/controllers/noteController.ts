@@ -60,6 +60,7 @@ export const getNotes = async (
   try {
     const filter: Record<string, unknown> = {
       user: req.user!._id,
+      isDeleted: false,
     };
 
     if (req.query.collectionId) {
@@ -87,6 +88,119 @@ export const getNotes = async (
     });
   }
 };
+
+
+// ==========================
+// Get Trash Notes
+// ==========================
+export const getTrashNotes = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const notes = await Note.find({
+      user: req.user!._id,
+      isDeleted: true,
+    })
+      .populate("collectionId", "name icon color")
+      .sort({
+        deletedAt: -1,
+      });
+
+    res.status(200).json({
+      success: true,
+      count: notes.length,
+      notes,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// Restore Note
+// ==========================
+export const restoreNote = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const note = await Note.findOne({
+      _id: req.params.id,
+      user: req.user!._id,
+      isDeleted: true,
+    });
+
+    if (!note) {
+      res.status(404).json({
+        success: false,
+        message: "Note not found in trash",
+      });
+      return;
+    }
+
+    note.isDeleted = false;
+    note.deletedAt = null;
+
+    await note.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Note restored successfully",
+      note,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// Permanent Delete Note
+// ==========================
+export const permanentDeleteNote = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const note = await Note.findOne({
+  _id: req.params.id,
+  user: req.user!._id,
+  isDeleted: true,
+});
+    if (!note) {
+      res.status(404).json({
+        success: false,
+        message: "Note not found in trash",
+      });
+      return;
+    }
+
+    await note.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: "Note permanently deleted",
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
 
 // ==========================
 // Get Single Note
@@ -191,6 +305,7 @@ export const deleteNote = async (
     const note = await Note.findOne({
       _id: req.params.id,
       user: req.user!._id,
+      isDeleted: false,
     });
 
     if (!note) {
@@ -201,11 +316,14 @@ export const deleteNote = async (
       return;
     }
 
-    await note.deleteOne();
+    note.isDeleted = true;
+    note.deletedAt = new Date();
+
+    await note.save();
 
     res.status(200).json({
       success: true,
-      message: "Note deleted successfully",
+      message: "Note moved to trash successfully",
     });
   } catch (error) {
     console.error(error);

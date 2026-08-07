@@ -9,7 +9,11 @@ export interface INote extends Document {
 
   user: mongoose.Types.ObjectId;
 
- collectionId?: mongoose.Types.ObjectId;
+  collectionId?: mongoose.Types.ObjectId;
+
+  isDeleted: boolean;
+
+  deletedAt: Date | null;
 }
 
 const noteSchema = new Schema<INote>(
@@ -47,14 +51,25 @@ const noteSchema = new Schema<INote>(
       required: true,
     },
 
-    // ==========================
-    // Collection Relationship
-    // ==========================
     collectionId: {
-  type: Schema.Types.ObjectId,
-  ref: "Collection",
-  default: null,
-},
+      type: Schema.Types.ObjectId,
+      ref: "Collection",
+      default: null,
+    },
+
+    // ==========================
+    // Soft Delete
+    // ==========================
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
