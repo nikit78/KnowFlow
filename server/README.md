@@ -135,3 +135,58 @@ Notes
 Each collection belongs to one user.
 
 Each note optionally belongs to one collection.
+
+---
+
+# 🗑 Trash Management System
+
+KnowFlow now supports a professional Soft Delete system similar to Gmail, Google Drive and Notion.
+
+## Features
+
+- Soft Delete Notes
+- View Trash
+- Restore Notes
+- Permanently Delete Notes
+- Deleted Timestamp Tracking
+
+---
+
+## Trash APIs
+
+| Method | Endpoint | Description |
+|---------|----------|-------------|
+| DELETE | /api/notes/:id | Move Note to Trash |
+| GET | /api/notes/trash | Get All Trashed Notes |
+| PATCH | /api/notes/:id/restore | Restore Note |
+| DELETE | /api/notes/:id/permanent | Permanently Delete Note |
+
+---
+
+## Soft Delete Flow
+
+Normal Note
+
+↓
+
+Move to Trash
+
+↓
+
+Restore
+
+OR
+
+Permanent Delete
+
+---
+
+## Database Fields
+
+```text
+isDeleted
+
+deletedAt
+```
+
+Soft Delete ensures accidental data loss is prevented while allowing users to recover deleted notes.

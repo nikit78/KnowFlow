@@ -3,6 +3,9 @@ import express from "express";
 import {
   createNote,
   getNotes,
+  getTrashNotes,
+  restoreNote,
+  permanentDeleteNote,
   getNoteById,
    updateNote,
    deleteNote,
@@ -24,6 +27,28 @@ router.post("/", isAuthenticated, createNote);
 // GET /api/notes
 // ==========================
 router.get("/", isAuthenticated, getNotes);
+
+// ==========================
+// Get Trash Notes
+// GET /api/notes/trash
+// ==========================
+router.get("/trash", isAuthenticated, getTrashNotes);
+
+// ==========================
+// Restore Note
+// PATCH /api/notes/:id/restore
+// ==========================
+router.patch("/:id/restore", isAuthenticated, restoreNote);
+
+// ==========================
+// Permanent Delete
+// DELETE /api/notes/:id/permanent
+// ==========================
+router.delete(
+  "/:id/permanent",
+  isAuthenticated,
+  permanentDeleteNote
+);
 
 // ==========================
 // Get Single Note

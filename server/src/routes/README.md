@@ -47,3 +47,17 @@ DELETE /api/collections/:id
 GET /api/notes?collectionId=<id>
 
 Returns notes belonging to a specific collection.
+
+---
+
+# Trash Routes
+
+DELETE /api/notes/:id
+
+GET /api/notes/trash
+
+PATCH /api/notes/:id/restore
+
+DELETE /api/notes/:id/permanent
+
+The Trash route must always be registered before dynamic :id routes.
