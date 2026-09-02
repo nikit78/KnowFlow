@@ -33,3 +33,5 @@ out/
 
 # Coverage
 coverage/
+
+server/uploads/
