@@ -4,7 +4,10 @@ export interface INote extends Document {
   title: string;
   content: string;
   color: string;
+
   isPinned: boolean;
+  isFavorite: boolean;
+
   tags: string[];
 
   user: mongoose.Types.ObjectId;
@@ -15,7 +18,6 @@ export interface INote extends Document {
 
   deletedAt: Date | null;
 }
-
 const noteSchema = new Schema<INote>(
   {
     title: {
@@ -37,6 +39,11 @@ const noteSchema = new Schema<INote>(
     isPinned: {
       type: Boolean,
       default: false,
+    },
+
+    isFavorite: {
+     type: Boolean,
+     default: false,
     },
 
     tags: [
@@ -75,6 +82,15 @@ const noteSchema = new Schema<INote>(
     timestamps: true,
   }
 );
+
+// ==========================
+// Text Search Index
+// ==========================
+noteSchema.index({
+  title: "text",
+  content: "text",
+  tags: "text",
+});
 
 const Note = mongoose.model<INote>("Note", noteSchema);
 

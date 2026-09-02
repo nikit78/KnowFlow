@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import express from "express";
 import noteRoutes from "./routes/noteRoutes.js";
 import collectionRoutes from "./routes/collectionRoutes.js";
+import documentRoutes from "./routes/documentRoutes.js";
 
 import { connectDatabase } from "./config/database.js";
 import authRoutes from "./routes/authRoutes.js";
@@ -30,6 +31,7 @@ app.use(cookieParser());
 app.use("/api/auth", authRoutes);
 app.use("/api/notes", noteRoutes);
 app.use("/api/collections", collectionRoutes);
+app.use("/api/documents", documentRoutes);
 
 app.get("/api/health", (_req, res) => {
   res.status(200).json({

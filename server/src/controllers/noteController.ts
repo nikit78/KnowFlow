@@ -1,5 +1,6 @@
 import { Response } from "express";
 import Note from "../models/Note.js";
+import SearchHistory from "../models/SearchHistory.js";
 import { AuthRequest } from "../middleware/authMiddleware.js";
 
 // ==========================
@@ -70,6 +71,89 @@ export const getNotes = async (
     const notes = await Note.find(filter)
       .populate("collectionId", "name icon color")
       .sort({
+        isPinned: -1,
+        createdAt: -1,
+      });
+
+    res.status(200).json({
+      success: true,
+      count: notes.length,
+      notes,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// Search Notes (MongoDB Text Search)
+// ==========================
+export const searchNotes = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const query = (req.query.q as string)?.trim();
+
+    if (!query) {
+      res.status(400).json({
+        success: false,
+        message: "Search query is required",
+      });
+      return;
+    }
+
+    // ==========================
+// Save Search History
+// ==========================
+await SearchHistory.findOneAndUpdate(
+  {
+    user: req.user!._id,
+    query,
+  },
+  {
+    query,
+    user: req.user!._id,
+    updatedAt: new Date(),
+  },
+  {
+    upsert: true,
+    returnDocument: "after",
+    setDefaultsOnInsert: true,
+  }
+);
+
+
+    const filter: Record<string, unknown> = {
+      user: req.user!._id,
+      isDeleted: false,
+      $text: {
+        $search: query,
+      },
+    };
+
+    if (req.query.collectionId) {
+      filter.collectionId = req.query.collectionId;
+    }
+
+    const notes = await Note.find(
+      filter,
+      {
+        score: {
+          $meta: "textScore",
+        },
+      }
+    )
+      .populate("collectionId", "name icon color")
+      .sort({
+        score: {
+          $meta: "textScore",
+        },
         isPinned: -1,
         createdAt: -1,
       });
@@ -364,6 +448,131 @@ export const togglePinNote = async (
       success: true,
       message: "Note pin status updated",
       note,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// Toggle Favorite
+// ==========================
+export const toggleFavoriteNote = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    console.log("Favorite ID:", req.params.id);
+    console.log("User ID:", req.user!._id.toString());
+
+    const note = await Note.findOne({
+  _id: req.params.id,
+  user: req.user!._id,
+  isDeleted: false,
+});
+
+    console.log("Found Note:", note);
+
+    if (!note) {
+      res.status(404).json({
+        success: false,
+        message: "Note not found",
+      });
+      return;
+    }
+
+    note.isFavorite = !note.isFavorite;
+
+    await note.save();
+
+    res.status(200).json({
+      success: true,
+      message: note.isFavorite
+        ? "Note added to favorites"
+        : "Note removed from favorites",
+      note,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// Get Recent Searches
+// ==========================
+export const getRecentSearches = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const searches = await SearchHistory.find({
+      user: req.user!._id,
+    })
+      .sort({
+        updatedAt: -1,
+      })
+      .limit(10);
+
+    res.status(200).json({
+      success: true,
+      count: searches.length,
+      searches,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// Search Suggestions
+// ==========================
+export const getSearchSuggestions = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const query = (req.query.q as string)?.trim();
+
+    if (!query) {
+      res.status(200).json({
+        success: true,
+        suggestions: [],
+      });
+      return;
+    }
+
+    const suggestions = await SearchHistory.find({
+      user: req.user!._id,
+      query: {
+        $regex: "^" + query,
+        $options: "i",
+      },
+    })
+      .sort({
+        updatedAt: -1,
+      })
+      .limit(5)
+      .select("query");
+
+    res.status(200).json({
+      success: true,
+      count: suggestions.length,
+      suggestions,
     });
   } catch (error) {
     console.error(error);
