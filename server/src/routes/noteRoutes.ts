@@ -3,13 +3,18 @@ import express from "express";
 import {
   createNote,
   getNotes,
+  searchNotes,
   getTrashNotes,
   restoreNote,
   permanentDeleteNote,
   getNoteById,
-   updateNote,
-   deleteNote,
-   togglePinNote,
+  updateNote,
+  deleteNote,
+  togglePinNote,
+  toggleFavoriteNote,
+  getRecentSearches,
+  getSearchSuggestions,
+
 } from "../controllers/noteController.js";
 
 import { isAuthenticated } from "../middleware/authMiddleware.js";
@@ -29,10 +34,36 @@ router.post("/", isAuthenticated, createNote);
 router.get("/", isAuthenticated, getNotes);
 
 // ==========================
+// Search Notes
+// GET /api/notes/search?q=react
+// ==========================
+router.get("/search", isAuthenticated, searchNotes);
+
+// ==========================
 // Get Trash Notes
 // GET /api/notes/trash
 // ==========================
 router.get("/trash", isAuthenticated, getTrashNotes);
+
+// ==========================
+// Recent Searches
+// GET /api/notes/search/history
+// ==========================
+router.get(
+  "/search/history",
+  isAuthenticated,
+  getRecentSearches
+);
+
+// ==========================
+// Search Suggestions
+// GET /api/notes/search/suggestions
+// ==========================
+router.get(
+  "/search/suggestions",
+  isAuthenticated,
+  getSearchSuggestions
+);
 
 // ==========================
 // Restore Note
@@ -69,5 +100,15 @@ router.put("/:id", isAuthenticated, updateNote);
 router.delete("/:id", isAuthenticated, deleteNote);
 
 router.patch("/:id/pin", isAuthenticated, togglePinNote);
+
+// ==========================
+// Toggle Favorite
+// PATCH /api/notes/:id/favorite
+// ==========================
+router.patch(
+  "/:id/favorite",
+  isAuthenticated,
+  toggleFavoriteNote
+);
 
 export default router;
