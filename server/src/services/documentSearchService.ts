@@ -42,6 +42,21 @@ export const searchDocumentChunks = async (
       .select(
         "document chunkIndex text"
       )
+      .select({
+        score: {
+          $meta: "textScore",
+        },
+      })
+      .populate({
+        path: "document",
+        select:
+          "title originalName documentType status",
+      })
+      .sort({
+        score: {
+          $meta: "textScore",
+        },
+      })
       .limit(safeLimit)
       .lean();
 

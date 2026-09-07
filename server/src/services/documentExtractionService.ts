@@ -44,11 +44,10 @@ export const extractTextFromDocument = async (
     // ==========================
     // TXT
     // ==========================
-    if (mimeType === "text/plain") {
-      const text = await fs.readFile(filePath, "utf-8");
-
-      return text.trim();
-    }
+    if (mimeType === "text/plain" || mimeType === "text/markdown") {
+  const text = await fs.readFile(filePath, "utf-8");
+  return text.trim();
+}
 
     throw new Error(
       `Unsupported document type: ${mimeType}`
