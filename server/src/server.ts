@@ -2,16 +2,24 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import express from "express";
+import helmet from "helmet";
 import noteRoutes from "./routes/noteRoutes.js";
 import collectionRoutes from "./routes/collectionRoutes.js";
 import documentRoutes from "./routes/documentRoutes.js";
+import { errorHandler } from "./middleware/errorMiddleware.js";
 
 import { connectDatabase } from "./config/database.js";
 import authRoutes from "./routes/authRoutes.js";
 
 dotenv.config();
 
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is missing in environment variables");
+}
+
 const app = express();
+
+app.use(helmet());
 
 const PORT = process.env.PORT || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
@@ -23,8 +31,7 @@ app.use(
     credentials: true,
   })
 );
-
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // Routes
@@ -39,6 +46,8 @@ app.get("/api/health", (_req, res) => {
     message: "KnowFlow API is running",
   });
 });
+
+app.use(errorHandler);
 
 // Start Server
 const startServer = async (): Promise<void> => {

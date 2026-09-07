@@ -1,10 +1,20 @@
 import { Response } from "express";
+import mongoose from "mongoose";
 import fs from "fs/promises";
 import Document from "../models/Document.js";
+import DocumentChunk from "../models/DocumentChunk.js";
 import SearchHistory from "../models/SearchHistory.js";
 import { AuthRequest } from "../middleware/authMiddleware.js";
 import { extractTextFromDocument } from "../services/documentExtractionService.js";
 import { createDocumentChunks } from "../services/documentChunkService.js";
+import { getDocumentChunks as retrieveDocumentChunks } from "../services/documentRetrievalService.js";
+import { searchDocumentChunks } from "../services/documentSearchService.js";
+import { retrieveRagContext } from "../services/ragRetrievalService.js";
+import { generateRagAnswer } from "../services/ragAnswerService.js";
+
+const escapeRegex = (value: string): string => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
 
 type DocumentType =
   | "research-paper"
@@ -47,41 +57,70 @@ export const uploadDocument = async (
     // Create Document
     // Initially Processing
     // ==========================
-    const document = await Document.create({
-      title:
-        title || req.file.originalname,
+    let document;
 
-      originalName:
-        req.file.originalname,
+try {
+  document = await Document.create({
+    title:
+      title || req.file.originalname,
 
-      fileName:
-        req.file.filename,
+    originalName:
+      req.file.originalname,
 
-      filePath:
-        req.file.path,
+    fileName:
+      req.file.filename,
 
-      fileSize:
-        req.file.size,
+    filePath:
+      req.file.path,
 
-      mimeType:
-        req.file.mimetype,
+    fileSize:
+      req.file.size,
 
-      documentType:
-        documentType || "other",
+    mimeType:
+      req.file.mimetype,
 
-      status: "processing",
+    documentType:
+      documentType || "other",
 
-      extractedText: "",
+    status: "processing",
 
-      tags: tags
-        ? tags
-            .split(",")
-            .map((tag: string) => tag.trim())
-            .filter(Boolean)
-        : [],
+    extractedText: "",
 
-      user: req.user!._id,
-    });
+    tags: tags
+      ? tags
+          .split(",")
+          .map((tag: string) => tag.trim())
+          .filter(Boolean)
+      : [],
+
+    user: req.user!._id,
+  });
+} catch (databaseError) {
+  console.error(
+    "Failed to create document record:",
+    databaseError
+  );
+
+  try {
+    await fs.unlink(req.file.path);
+  } catch (fileError) {
+    const error = fileError as NodeJS.ErrnoException;
+
+    if (error.code !== "ENOENT") {
+      console.error(
+        "Failed to delete uploaded file after database error:",
+        fileError
+      );
+    }
+  }
+
+  res.status(500).json({
+    success: false,
+    message: "Failed to save document",
+  });
+
+  return;
+}
 
     // ==========================
     // Extract Text
@@ -126,26 +165,43 @@ console.log(
           "Document uploaded and processed successfully",
         document,
       });
-    } catch (processingError) {
+   } catch (processingError) {
+  console.error(
+    "Document processing failed:",
+    processingError
+  );
+
+  // ==========================
+  // Mark As Failed
+  // ==========================
+  document.status = "failed";
+
+  await document.save();
+
+  // ==========================
+  // Cleanup Uploaded File
+  // ==========================
+  try {
+    await fs.unlink(document.filePath);
+  } catch (fileError) {
+    const error = fileError as NodeJS.ErrnoException;
+
+    // Ignore file-not-found errors
+    if (error.code !== "ENOENT") {
       console.error(
-        "Document processing failed:",
-        processingError
+        "Failed to delete uploaded file after processing failure:",
+        fileError
       );
-
-      // ==========================
-      // Mark As Failed
-      // ==========================
-      document.status = "failed";
-
-      await document.save();
-
-      res.status(500).json({
-        success: false,
-        message:
-          "Document uploaded but processing failed",
-        documentId: document._id,
-      });
     }
+  }
+
+  res.status(500).json({
+    success: false,
+    message:
+      "Document uploaded but processing failed",
+    documentId: document._id,
+  });
+}
   } catch (error) {
     console.error(
       "Upload document error:",
@@ -325,6 +381,32 @@ export const getDocumentById = async (
   }
 };
 
+export const getDocumentChunks = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const chunks = await retrieveDocumentChunks(
+      req.user!._id,
+      id as unknown as mongoose.Types.ObjectId
+    );
+
+    res.status(200).json({
+      success: true,
+      chunks,
+    });
+  } catch (error) {
+    console.error("Get document chunks error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
 // ==========================
 // Delete Document (Soft Delete)
 // ==========================
@@ -473,6 +555,13 @@ export const permanentDeleteDocument = async (
       }
     }
 
+    // Delete all chunks belonging to this document
+    // and the currently authenticated user
+    await DocumentChunk.deleteMany({
+      document: document._id,
+      user: req.user!._id,
+    });
+
     // Delete MongoDB document
     await Document.deleteOne({
       _id: document._id,
@@ -491,7 +580,6 @@ export const permanentDeleteDocument = async (
     });
   }
 };
-
 // ==========================
 // Search Documents
 // ==========================
@@ -510,31 +598,33 @@ export const searchDocuments = async (
       return;
     }
 
+    const safeQuery = escapeRegex(query);
+
     const documents = await Document.find({
       user: req.user!._id,
       isDeleted: false,
       $or: [
         {
           title: {
-            $regex: query,
+            $regex: safeQuery,
             $options: "i",
           },
         },
         {
           originalName: {
-            $regex: query,
+           $regex: safeQuery,
             $options: "i",
           },
         },
         {
           documentType: {
-            $regex: query,
+            $regex: safeQuery,
             $options: "i",
           },
         },
         {
           tags: {
-            $regex: query,
+            $regex: safeQuery,
             $options: "i",
           },
         },
@@ -593,10 +683,12 @@ export const getDocumentSearchSuggestions = async (
       return;
     }
 
+    const safeQuery = escapeRegex(query);
+
     const suggestions = await SearchHistory.find({
       user: req.user!._id,
       query: {
-        $regex: query,
+       $regex: safeQuery,
         $options: "i",
       },
     })
@@ -1031,7 +1123,7 @@ export const getDocumentsByTag = async (
       user: req.user!._id,
       isDeleted: false,
       tags: {
-        $regex: `^${tag}$`,
+        $regex: `^${escapeRegex(tag)}$`,
         $options: "i",
       },
     }).sort({
@@ -1077,7 +1169,7 @@ export const getDocumentsByType = async (
       user: req.user!._id,
       isDeleted: false,
       documentType: {
-        $regex: `^${documentType}$`,
+        $regex: `^${escapeRegex(documentType)}$`,
         $options: "i",
       },
     }).sort({
@@ -1242,6 +1334,171 @@ export const getDocumentsByStatus = async (
     });
   } catch (error) {
     console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// Search Document Chunks
+// GET /api/documents/chunks/search?q=
+// ==========================
+
+export const searchDocumentChunksApi = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { q } = req.query;
+
+    if (!q || typeof q !== "string" || !q.trim()) {
+      res.status(400).json({
+        success: false,
+        message: "Search query is required",
+      });
+      return;
+    }
+
+    const chunks = await searchDocumentChunks(
+      req.user!._id,
+      q.trim()
+    );
+
+    res.status(200).json({
+      success: true,
+      query: q.trim(),
+      count: chunks.length,
+      chunks,
+    });
+  } catch (error) {
+    console.error(
+      "Search document chunks error:",
+      error
+    );
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// RAG Retrieval API
+// ==========================
+
+export const retrieveRagContextApi = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { q } = req.query;
+
+    if (
+      !q ||
+      typeof q !== "string" ||
+      !q.trim()
+    ) {
+      res.status(400).json({
+        success: false,
+        message: "Search query is required",
+      });
+      return;
+    }
+
+    const result = await retrieveRagContext(
+      req.user!._id,
+      q.trim()
+    );
+
+    res.status(200).json({
+      success: true,
+      query: q.trim(),
+      count: result.chunks.length,
+      context: result.context,
+      chunks: result.chunks,
+    });
+  } catch (error) {
+    console.error(
+      "RAG retrieval error:",
+      error
+    );
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// ==========================
+// RAG Question Answer API
+// ==========================
+
+export const askRagQuestion = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { question } = req.body;
+
+    if (
+      !question ||
+      typeof question !== "string" ||
+      !question.trim()
+    ) {
+      res.status(400).json({
+        success: false,
+        message: "Question is required",
+      });
+      return;
+    }
+
+    const result = await generateRagAnswer({
+      userId: req.user!._id,
+      question: question.trim(),
+    });
+
+   res.status(200).json({
+  success: true,
+  question: question.trim(),
+  answer: result.answer,
+  context: result.context,
+  chunks: result.chunks,
+  sources: result.sources,
+});
+  } catch (error: any) {
+    console.error(
+      "RAG question error:",
+      error
+    );
+
+    if (
+      error?.message ===
+      "No relevant document context found"
+    ) {
+      res.status(404).json({
+        success: false,
+        message:
+          "No relevant information found in your documents",
+      });
+      return;
+    }
+
+    if (
+      error?.message ===
+      "OpenAI API credits are exhausted. AI answer generation is currently unavailable."
+    ) {
+      res.status(503).json({
+        success: false,
+        message:
+          "AI answer generation is currently unavailable",
+      });
+      return;
+    }
 
     res.status(500).json({
       success: false,

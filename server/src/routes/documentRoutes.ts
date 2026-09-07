@@ -8,6 +8,8 @@ import {
   uploadDocument,
   getDocuments,
   getDocumentById,
+  getDocumentChunks,
+  searchDocumentChunksApi,
   updateDocument,
   deleteDocument,
   getTrashDocuments,
@@ -24,6 +26,8 @@ import {
   getDocumentsByType,
   getDocumentsByTypes,
   getDocumentsByStatus,
+  retrieveRagContextApi,
+  askRagQuestion,
 } from "../controllers/documentController.js";
 
 const router = express.Router();
@@ -129,6 +133,28 @@ router.get(
 );
 
 // ==========================
+// Search Document Chunks
+// GET /api/documents/chunks/search?q=
+// ==========================
+router.get(
+  "/chunks/search",
+  isAuthenticated,
+  searchDocumentChunksApi
+);
+
+router.get(
+  "/rag/retrieve",
+  isAuthenticated,
+  retrieveRagContextApi
+);
+
+router.post(
+  "/rag/ask",
+  isAuthenticated,
+  askRagQuestion
+);
+
+// ==========================
 // Download Document
 // GET /api/documents/:id/download
 // ==========================
@@ -176,6 +202,16 @@ router.patch(
   "/:id",
   isAuthenticated,
   updateDocument
+);
+
+// ==========================
+// Get Document Chunks
+// GET /api/documents/:id/chunks
+// ==========================
+router.get(
+  "/:id/chunks",
+  isAuthenticated,
+  getDocumentChunks
 );
 
 // ==========================

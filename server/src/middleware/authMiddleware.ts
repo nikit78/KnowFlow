@@ -16,7 +16,6 @@ export const isAuthenticated = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-     console.log("Cookies:", req.cookies);
 
     const token =
   req.cookies?.token ||
