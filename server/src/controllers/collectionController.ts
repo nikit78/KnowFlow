@@ -153,3 +153,162 @@ export const deleteCollection = async (
     });
   }
 };
+
+export const addDocumentToCollection = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { collectionId, documentId } = req.params;
+
+    const collection = await Collection.findOne({
+      _id: collectionId,
+      user: req.user!._id,
+    });
+
+    if (!collection) {
+      res.status(404).json({
+        success: false,
+        message: "Collection not found",
+      });
+      return;
+    }
+
+    const Document = (await import("../models/Document.js")).default;
+
+    const document = await Document.findOne({
+      _id: documentId,
+      user: req.user!._id,
+      isDeleted: false,
+    });
+
+    if (!document) {
+      res.status(404).json({
+        success: false,
+        message: "Document not found",
+      });
+      return;
+    }
+
+    const alreadyExists = collection.documents.some(
+      (id) => id.toString() === documentId
+    );
+
+    if (alreadyExists) {
+      res.status(400).json({
+        success: false,
+        message: "Document is already in this collection",
+      });
+      return;
+    }
+
+    collection.documents.push(document._id);
+    await collection.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Document added to collection successfully",
+      collection,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const removeDocumentFromCollection = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { collectionId, documentId } = req.params;
+
+    const collection = await Collection.findOne({
+      _id: collectionId,
+      user: req.user!._id,
+    });
+
+    if (!collection) {
+      res.status(404).json({
+        success: false,
+        message: "Collection not found",
+      });
+      return;
+    }
+
+    const documentExists = collection.documents.some(
+      (id) => id.toString() === documentId
+    );
+
+    if (!documentExists) {
+      res.status(404).json({
+        success: false,
+        message: "Document is not in this collection",
+      });
+      return;
+    }
+
+    collection.documents = collection.documents.filter(
+      (id) => id.toString() !== documentId
+    );
+
+    await collection.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Document removed from collection successfully",
+      collection,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const getCollectionById = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const collection = await Collection.findOne({
+      _id: req.params.id,
+      user: req.user!._id,
+    }).populate({
+      path: "documents",
+      select:
+        "title originalName fileSize mimeType documentType status tags isFavorite isDeleted createdAt updatedAt",
+      match: {
+        user: req.user!._id,
+        isDeleted: false,
+      },
+    });
+
+    if (!collection) {
+      res.status(404).json({
+        success: false,
+        message: "Collection not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      collection,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};

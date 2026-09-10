@@ -6,6 +6,7 @@ export interface ICollection extends Document {
   icon: string;
   color: string;
   user: mongoose.Types.ObjectId;
+  documents: mongoose.Types.ObjectId[];
 }
 
 const collectionSchema = new Schema<ICollection>(
@@ -37,6 +38,13 @@ const collectionSchema = new Schema<ICollection>(
       ref: "User",
       required: true,
     },
+
+    documents: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Document",
+      },
+    ],
   },
   {
     timestamps: true,

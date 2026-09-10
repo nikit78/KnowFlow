@@ -4,7 +4,9 @@ import bcrypt from "bcryptjs";
 export interface IUser extends Document {
   name: string;
   email: string;
-  password: string;
+  password?: string;
+  googleId?: string;
+ authProvider: "local" | "google" | "both";
   avatar?: string;
   role: "user" | "admin";
   isVerified: boolean;
@@ -27,12 +29,17 @@ const userSchema = new Schema<IUser>(
       trim: true,
     },
 
-    password: {
-      type: String,
-      required: true,
-      minlength: 6,
-      select: false,
-    },
+    password: { type: String, minlength: 6, select: false },
+googleId: {
+  type: String,
+  unique: true,
+  sparse: true,
+},
+authProvider: {
+  type: String,
+   enum: ["local", "google", "both"],
+  default: "local",
+},
 
     avatar: {
       type: String,
@@ -61,6 +68,10 @@ userSchema.pre("save", async function () {
     return;
   }
 
+  if (!this.password) {
+    return;
+  }
+
   this.password = await bcrypt.hash(this.password, 10);
 });
 
@@ -68,6 +79,10 @@ userSchema.pre("save", async function () {
 userSchema.methods.comparePassword = async function (
   candidatePassword: string
 ): Promise<boolean> {
+  if (!this.password) {
+    return false;
+  }
+
   return bcrypt.compare(candidatePassword, this.password);
 };
 

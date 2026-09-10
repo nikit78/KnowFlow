@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import Container from "./Container";
 
@@ -25,12 +26,12 @@ export default function Navbar() {
     <header className="sticky top-0 z-50 border-b border-white/5 bg-[#09090B]/85 backdrop-blur-xl">
       <Container>
         <nav className="flex h-[72px] items-center justify-between">
-          <a
+          <Link
             href="/"
             className="text-xl font-semibold tracking-tight text-zinc-100"
           >
             Know<span className="text-blue-400">Flow</span>
-          </a>
+          </Link>
 
           <div className="hidden items-center gap-8 md:flex">
             {navigation.map((item) => (
@@ -45,19 +46,19 @@ export default function Navbar() {
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
-            <a
+            <Link
               href="/auth/login"
               className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-100"
             >
               Log in
-            </a>
+            </Link>
 
-            <a
+            <Link
               href="/auth/register"
               className="rounded-lg bg-[#4F6BFF] px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-[#4058E8] hover:shadow-lg hover:shadow-blue-500/10"
             >
               Get started
-            </a>
+            </Link>
           </div>
 
           <button
@@ -106,21 +107,21 @@ export default function Navbar() {
               ))}
 
               <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/5 pt-4">
-                <a
+                <Link
                   href="/auth/login"
                   onClick={() => setMenuOpen(false)}
                   className="rounded-lg border border-white/10 px-4 py-2.5 text-center text-sm font-medium text-zinc-300 transition hover:bg-white/5"
                 >
                   Log in
-                </a>
+                </Link>
 
-                <a
+                <Link
                   href="/auth/register"
                   onClick={() => setMenuOpen(false)}
                   className="rounded-lg bg-[#4F6BFF] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-[#4058E8]"
                 >
                   Get started
-                </a>
+                </Link>
               </div>
             </div>
           </div>
