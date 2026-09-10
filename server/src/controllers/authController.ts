@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import User from "../models/User.js";
 import { AuthRequest } from "../middleware/authMiddleware.js";
 import { sendToken } from "../utils/sendToken.js";
+import { verifyGoogleIdToken } from "../services/googleAuthService.js";
+
 
 // ==========================
 // Register User
@@ -126,4 +128,68 @@ export const logoutUser = async (
     success: true,
     message: "Logged out successfully",
   });
+};
+
+// Google Login
+export const googleLogin = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      res.status(400).json({
+        success: false,
+        message: "Google credential is required",
+      });
+      return;
+    }
+
+    const googleUser = await verifyGoogleIdToken(credential);
+
+    let user = await User.findOne({
+      googleId: googleUser.googleId,
+    });
+
+    // If Google account is not linked yet, try matching the email.
+    if (!user) {
+      user = await User.findOne({
+  email: googleUser.email,
+}).select("+password");
+
+      if (user) {
+        user.googleId = googleUser.googleId;
+       user.authProvider = user.password ? "both" : "google";
+        user.isVerified = true;
+
+        if (googleUser.picture && !user.avatar) {
+          user.avatar = googleUser.picture;
+        }
+
+        await user.save();
+      }
+    }
+
+    // Create a new Google user.
+    if (!user) {
+      user = await User.create({
+        name: googleUser.name,
+        email: googleUser.email,
+        googleId: googleUser.googleId,
+        authProvider: "google",
+        avatar: googleUser.picture || "",
+        isVerified: true,
+      });
+    }
+
+    sendToken(user, 200, res);
+  } catch (error) {
+    console.error("Google login error:", error);
+
+    res.status(401).json({
+      success: false,
+      message: "Unable to sign in with Google",
+    });
+  }
 };

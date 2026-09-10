@@ -5,6 +5,9 @@ import {
   getCollections,
   updateCollection,
   deleteCollection,
+  addDocumentToCollection,
+  removeDocumentFromCollection,
+  getCollectionById,
 } from "../controllers/collectionController.js";
 
 import { isAuthenticated } from "../middleware/authMiddleware.js";
@@ -23,6 +26,8 @@ router.post("/", isAuthenticated, createCollection);
 // ==========================
 router.get("/", isAuthenticated, getCollections);
 
+router.get("/:id", isAuthenticated, getCollectionById);
+
 // ==========================
 // Update Collection
 // PUT /api/collections/:id
@@ -34,5 +39,17 @@ router.put("/:id", isAuthenticated, updateCollection);
 // DELETE /api/collections/:id
 // ==========================
 router.delete("/:id", isAuthenticated, deleteCollection);
+
+router.post(
+  "/:collectionId/documents/:documentId",
+  isAuthenticated,
+  addDocumentToCollection
+);
+
+router.delete(
+  "/:collectionId/documents/:documentId",
+  isAuthenticated,
+  removeDocumentFromCollection
+);
 
 export default router;

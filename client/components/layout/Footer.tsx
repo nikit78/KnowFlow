@@ -1,18 +1,19 @@
+import Link from "next/link";
 import Container from "./Container";
 
 const footerLinks = {
   Product: [
-    { label: "Features", href: "#features" },
-    { label: "Pricing", href: "#pricing" },
-    { label: "About", href: "#about" },
+    { label: "Features", href: "#features", type: "anchor" },
+    { label: "Pricing", href: "#pricing", type: "anchor" },
+    { label: "About", href: "#about", type: "anchor" },
   ],
   Account: [
-    { label: "Log in", href: "/auth/login" },
-    { label: "Create account", href: "/auth/register" },
+    { label: "Log in", href: "/auth/login", type: "link" },
+    { label: "Create account", href: "/auth/register", type: "link" },
   ],
   Legal: [
-    { label: "Privacy", href: "#" },
-    { label: "Terms", href: "#" },
+    { label: "Privacy", href: "#", type: "anchor" },
+    { label: "Terms", href: "#", type: "anchor" },
   ],
 };
 
@@ -22,12 +23,12 @@ export default function Footer() {
       <Container>
         <div className="grid gap-12 py-16 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div className="max-w-sm">
-            <a
+            <Link
               href="/"
               className="text-xl font-semibold tracking-tight text-zinc-100"
             >
               Know<span className="text-blue-400">Flow</span>
-            </a>
+            </Link>
 
             <p className="mt-4 text-sm leading-6 text-zinc-500">
               A calm, connected workspace for your notes, documents, ideas,
@@ -52,12 +53,21 @@ export default function Footer() {
               <ul className="mt-5 space-y-3">
                 {links.map((link) => (
                   <li key={link.label}>
-                    <a
-                      href={link.href}
-                      className="text-sm text-zinc-600 transition-colors hover:text-zinc-200"
-                    >
-                      {link.label}
-                    </a>
+                    {link.type === "link" ? (
+                      <Link
+                        href={link.href}
+                        className="text-sm text-zinc-600 transition-colors hover:text-zinc-200"
+                      >
+                        {link.label}
+                      </Link>
+                    ) : (
+                      <a
+                        href={link.href}
+                        className="text-sm text-zinc-600 transition-colors hover:text-zinc-200"
+                      >
+                        {link.label}
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>

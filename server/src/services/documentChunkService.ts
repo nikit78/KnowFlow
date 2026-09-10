@@ -73,9 +73,12 @@ export const createDocumentChunks = async (
   for (const chunk of savedChunks) {
     try {
       const embedding =
-        await generateEmbedding(
-          chunk.text
-        );
+  await generateEmbedding(
+    chunk.text,
+    {
+      inputType: "passage",
+    }
+  );
 
       chunk.embedding = embedding;
 

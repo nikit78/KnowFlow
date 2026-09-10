@@ -1,6 +1,79 @@
+"use client";
+
 import Link from "next/link";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+
+const API_URL = "http://localhost:5000/api";
 
 export default function RegisterPage() {
+  const router = useRouter();
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setError("");
+
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedName || !trimmedEmail || !password) {
+      setError("Please complete all required fields.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setError("Please agree to the Terms and Privacy Policy.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${API_URL}/auth/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          name: trimmedName,
+          email: trimmedEmail,
+          password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to create your account.");
+      }
+
+      router.push("/dashboard");
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#09090B] text-zinc-100">
       <div className="grid min-h-screen lg:grid-cols-2">
@@ -44,9 +117,7 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <p className="text-xs text-zinc-700">
-            © 2026 KnowFlow
-          </p>
+          <p className="text-xs text-zinc-700">© 2026 KnowFlow</p>
         </section>
 
         <section className="flex min-h-screen items-center justify-center px-6 py-12 sm:px-10">
@@ -71,7 +142,13 @@ export default function RegisterPage() {
                 </p>
               </div>
 
-              <form className="mt-8 space-y-5">
+              {error && (
+                <div className="mt-6 rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm text-red-300">
+                  {error}
+                </div>
+              )}
+
+              <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
                 <div>
                   <label
                     htmlFor="name"
@@ -84,7 +161,10 @@ export default function RegisterPage() {
                     id="name"
                     name="name"
                     type="text"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
                     placeholder="Your name"
+                    autoComplete="name"
                     className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-blue-400/40 focus:bg-white/[0.04] focus:ring-2 focus:ring-blue-400/10"
                   />
                 </div>
@@ -101,7 +181,10 @@ export default function RegisterPage() {
                     id="email"
                     name="email"
                     type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
                     placeholder="you@example.com"
+                    autoComplete="email"
                     className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-blue-400/40 focus:bg-white/[0.04] focus:ring-2 focus:ring-blue-400/10"
                   />
                 </div>
@@ -118,7 +201,10 @@ export default function RegisterPage() {
                     id="password"
                     name="password"
                     type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
                     placeholder="Create a password"
+                    autoComplete="new-password"
                     className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-blue-400/40 focus:bg-white/[0.04] focus:ring-2 focus:ring-blue-400/10"
                   />
 
@@ -130,6 +216,10 @@ export default function RegisterPage() {
                 <label className="flex cursor-pointer items-start gap-3">
                   <input
                     type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(event) =>
+                      setAcceptedTerms(event.target.checked)
+                    }
                     className="mt-0.5 h-4 w-4 rounded border-white/10 bg-white/[0.03] accent-blue-500"
                   />
 
@@ -137,6 +227,7 @@ export default function RegisterPage() {
                     I agree to the KnowFlow{" "}
                     <a
                       href="#"
+                      onClick={(event) => event.preventDefault()}
                       className="text-zinc-400 transition-colors hover:text-zinc-200"
                     >
                       Terms
@@ -144,6 +235,7 @@ export default function RegisterPage() {
                     and{" "}
                     <a
                       href="#"
+                      onClick={(event) => event.preventDefault()}
                       className="text-zinc-400 transition-colors hover:text-zinc-200"
                     >
                       Privacy Policy
@@ -154,25 +246,25 @@ export default function RegisterPage() {
 
                 <button
                   type="submit"
-                  className="h-11 w-full rounded-xl bg-blue-500 px-5 text-sm font-semibold text-white transition-all duration-200 hover:bg-blue-400 active:scale-[0.99]"
+                  disabled={loading}
+                  className="h-11 w-full rounded-xl bg-blue-500 px-5 text-sm font-semibold text-white transition-all duration-200 hover:bg-blue-400 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Create account
+                  {loading ? "Creating account..." : "Create account"}
                 </button>
               </form>
 
               <div className="my-7 flex items-center gap-4">
                 <div className="h-px flex-1 bg-white/5" />
 
-                <span className="text-xs text-zinc-700">
-                  OR
-                </span>
+                <span className="text-xs text-zinc-700">OR</span>
 
                 <div className="h-px flex-1 bg-white/5" />
               </div>
 
               <button
                 type="button"
-                className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.02] px-5 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.04] hover:text-zinc-100"
+                disabled
+                className="h-11 w-full cursor-not-allowed rounded-xl border border-white/10 bg-white/[0.02] px-5 text-sm font-medium text-zinc-600"
               >
                 Continue with Google
               </button>
