@@ -1,20 +1,30 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-
-const API_URL = "http://localhost:5000/api";
-
-type Note = {
-  _id: string;
-  title: string;
-  content: string;
-  tags: string[];
-  isPinned: boolean;
-  isFavorite: boolean;
-  createdAt: string;
-  updatedAt?: string;
-};
+import { useDashboard } from "../layout";
+import { apiFetch, ApiError } from "@/lib/api";
+import type { Note } from "@/lib/types";
+import { formatDate } from "@/lib/format";
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
+import Input from "@/components/ui/Input";
+import Spinner from "@/components/ui/Spinner";
+import {
+  IconArrowRight,
+  IconNote,
+  IconPlus,
+  IconSearch,
+  IconStar,
+  IconTrash,
+} from "@/components/icons";
 
 type NotesResponse = {
   success: boolean;
@@ -23,13 +33,13 @@ type NotesResponse = {
 };
 
 export default function NotesPage() {
+  useDashboard();
   const router = useRouter();
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
   const [searchQuery, setSearchQuery] = useState("");
 
   const [isCreating, setIsCreating] = useState(false);
@@ -42,73 +52,60 @@ export default function NotesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const loadNotes = async () => {
+  const loadNotes = useCallback(async () => {
     try {
       setError("");
 
-      const response = await fetch(`${API_URL}/notes`, {
-        credentials: "include",
-      });
+      const data = await apiFetch<NotesResponse>("/notes");
 
-      if (response.status === 401) {
+      setNotes(data.notes ?? []);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
         router.replace("/auth/login");
         return;
       }
 
-      const data: NotesResponse = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to load notes.");
-      }
-
-      setNotes(data.notes || []);
-    } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Something went wrong while loading notes."
+          : "Something went wrong while loading notes.",
       );
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    const load = async () => {
-      await Promise.resolve();
-      await loadNotes();
-    };
-
-    void load();
   }, [router]);
 
-  const resetEditor = () => {
+  useEffect(() => {
+    void loadNotes();
+  }, [loadNotes]);
+
+  function resetEditor() {
     setTitle("");
     setContent("");
     setTags("");
     setIsCreating(false);
     setEditingNote(null);
-  };
+  }
 
-  const openCreate = () => {
+  function openCreate() {
     setError("");
     setEditingNote(null);
     setTitle("");
     setContent("");
     setTags("");
     setIsCreating(true);
-  };
+  }
 
-  const openEdit = (note: Note) => {
+  function openEdit(note: Note) {
     setError("");
     setIsCreating(false);
     setEditingNote(note);
     setTitle(note.title);
     setContent(note.content);
     setTags(note.tags?.join(", ") || "");
-  };
+  }
 
-  const saveNote = async (event: FormEvent) => {
+  async function saveNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!title.trim()) {
@@ -125,179 +122,153 @@ export default function NotesPage() {
       setSaving(true);
       setError("");
 
-      const isEditing = Boolean(editingNote);
+      const payload = {
+        title: title.trim(),
+        content: content.trim(),
+        tags: tags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+      };
 
-      const response = await fetch(
-        isEditing
-          ? `${API_URL}/notes/${editingNote!._id}`
-          : `${API_URL}/notes`,
-        {
-          method: isEditing ? "PUT" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include",
-          body: JSON.stringify({
-            title: title.trim(),
-            content: content.trim(),
-            tags: tags
-              .split(",")
-              .map((tag) => tag.trim())
-              .filter(Boolean),
-          }),
-        }
-      );
-
-      if (response.status === 401) {
-        router.replace("/auth/login");
-        return;
-      }
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to save note.");
+      if (editingNote) {
+        await apiFetch(`/notes/${editingNote._id}`, {
+          method: "PUT",
+          body: payload,
+        });
+      } else {
+        await apiFetch("/notes", {
+          method: "POST",
+          body: payload,
+        });
       }
 
       resetEditor();
       await loadNotes();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
       setError(
         err instanceof Error
           ? err.message
-          : "Something went wrong while saving the note."
+          : "Something went wrong while saving the note.",
       );
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  const togglePin = async (note: Note) => {
+  async function togglePin(note: Note) {
     try {
-      const response = await fetch(`${API_URL}/notes/${note._id}/pin`, {
+      setError("");
+
+      await apiFetch(`/notes/${note._id}/pin`, {
         method: "PATCH",
-        credentials: "include",
       });
 
-      if (response.status === 401) {
+      setNotes((current) =>
+        current.map((item) =>
+          item._id === note._id
+            ? {
+                ...item,
+                isPinned: !item.isPinned,
+              }
+            : item,
+        ),
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
         router.replace("/auth/login");
         return;
       }
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to update pin.");
-      }
-
-      setNotes((current) =>
-        current.map((item) =>
-          item._id === note._id
-            ? { ...item, isPinned: !item.isPinned }
-            : item
-        )
-      );
-    } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Unable to update note."
+        err instanceof Error ? err.message : "Unable to update note.",
       );
     }
-  };
+  }
 
-  const toggleFavorite = async (note: Note) => {
+  async function toggleFavorite(note: Note) {
     try {
-      const response = await fetch(
-        `${API_URL}/notes/${note._id}/favorite`,
-        {
-          method: "PATCH",
-          credentials: "include",
-        }
-      );
+      setError("");
 
-      if (response.status === 401) {
-        router.replace("/auth/login");
-        return;
-      }
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to update favorite.");
-      }
+      await apiFetch(`/notes/${note._id}/favorite`, {
+        method: "PATCH",
+      });
 
       setNotes((current) =>
         current.map((item) =>
           item._id === note._id
-            ? { ...item, isFavorite: !item.isFavorite }
-            : item
-        )
+            ? {
+                ...item,
+                isFavorite: !item.isFavorite,
+              }
+            : item,
+        ),
       );
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to update favorite."
+          : "Unable to update favorite.",
       );
     }
-  };
+  }
 
-  const deleteNote = async () => {
+  async function deleteNote() {
     if (!deleteTarget) return;
 
     try {
       setDeleting(true);
       setError("");
 
-      const response = await fetch(
-        `${API_URL}/notes/${deleteTarget._id}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        }
-      );
-
-      if (response.status === 401) {
-        router.replace("/auth/login");
-        return;
-      }
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to delete note.");
-      }
+      await apiFetch(`/notes/${deleteTarget._id}`, {
+        method: "DELETE",
+      });
 
       setNotes((current) =>
-        current.filter((note) => note._id !== deleteTarget._id)
+        current.filter((note) => note._id !== deleteTarget._id),
       );
 
       setDeleteTarget(null);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
       setError(
-        err instanceof Error ? err.message : "Unable to delete note."
+        err instanceof Error ? err.message : "Unable to delete note.",
       );
     } finally {
       setDeleting(false);
     }
-  };
+  }
 
   const filteredNotes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
     const result = !query
       ? notes
-      : notes.filter((note) => {
-          return (
+      : notes.filter(
+          (note) =>
             note.title.toLowerCase().includes(query) ||
             note.content.toLowerCase().includes(query) ||
             note.tags?.some((tag) =>
-              tag.toLowerCase().includes(query)
-            )
-          );
-        });
+              tag.toLowerCase().includes(query),
+            ),
+        );
 
     return [...result].sort((a, b) => {
-      if (a.isPinned !== b.isPinned) {
+      if (Boolean(a.isPinned) !== Boolean(b.isPinned)) {
         return a.isPinned ? -1 : 1;
       }
 
@@ -308,157 +279,208 @@ export default function NotesPage() {
     });
   }, [notes, searchQuery]);
 
-  const formatDate = (date: string) => {
-    return new Intl.DateTimeFormat("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    }).format(new Date(date));
-  };
+  const pinnedCount = notes.filter((note) => note.isPinned).length;
+  const favoriteCount = notes.filter((note) => note.isFavorite).length;
 
   return (
-    <main className="min-h-screen bg-[#09090b] text-zinc-100">
-      <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-[#09090b]/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <div className="flex items-center gap-3">
+    <div className="mx-auto max-w-6xl space-y-8">
+      {/* Header */}
+      <section className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kf-accent-ink">
+            Personal knowledge
+          </p>
+
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-kf-ink sm:text-4xl">
+            Notes
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-kf-muted sm:text-base">
+            Capture ideas, technical concepts, interview preparation, and
+            useful thoughts alongside your documents.
+          </p>
+        </div>
+
+        <Button onClick={openCreate}>
+          <IconPlus size={16} />
+          New note
+        </Button>
+      </section>
+
+      {/* Overview */}
+      <section className="grid gap-4 sm:grid-cols-3">
+        <div className="kf-card p-5">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-kf-muted">
+            Total notes
+          </p>
+
+          <p className="mt-3 text-3xl font-bold tracking-tight text-kf-ink">
+            {notes.length}
+          </p>
+
+          <p className="mt-2 text-xs text-kf-faint">
+            Your saved knowledge
+          </p>
+        </div>
+
+        <div className="kf-card p-5">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-kf-muted">
+            Pinned
+          </p>
+
+          <p className="mt-3 text-3xl font-bold tracking-tight text-kf-ink">
+            {pinnedCount}
+          </p>
+
+          <p className="mt-2 text-xs text-kf-faint">
+            Quick-access notes
+          </p>
+        </div>
+
+        <div className="kf-card p-5">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-kf-muted">
+            Favorites
+          </p>
+
+          <p className="mt-3 text-3xl font-bold tracking-tight text-kf-ink">
+            {favoriteCount}
+          </p>
+
+          <p className="mt-2 text-xs text-kf-faint">
+            Notes marked important
+          </p>
+        </div>
+      </section>
+
+      {/* Search */}
+      <section className="kf-card p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-kf-ink">
+              Search your notes
+            </h2>
+
+            <p className="mt-1 text-xs text-kf-muted">
+              Search by title, content, or tag.
+            </p>
+          </div>
+
+          {searchQuery && (
             <button
-              onClick={() => router.push("/dashboard")}
-              className="text-sm text-zinc-400 transition hover:text-white"
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="self-start text-xs font-semibold text-kf-accent-ink hover:underline sm:self-auto"
             >
-              Dashboard
+              Clear search
             </button>
+          )}
+        </div>
 
-            <span className="text-zinc-700">/</span>
+        <div className="relative mt-4">
+          <IconSearch
+            size={16}
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-kf-faint"
+          />
 
-            <span className="text-sm font-medium text-zinc-100">
-              Notes
-            </span>
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search notes, content or tags..."
+            aria-label="Search notes"
+            className="h-11 w-full rounded-xl border border-kf-border bg-kf-surface pl-10 pr-4 text-sm text-kf-ink outline-none transition placeholder:text-kf-faint focus:border-kf-accent focus:ring-2 focus:ring-kf-accent/15"
+          />
+        </div>
+      </section>
+
+      {/* Error */}
+      {error && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-kf-error/20 bg-kf-error-soft px-4 py-4 text-sm text-kf-error sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold">Something went wrong</p>
+            <p className="mt-1 opacity-90">{error}</p>
           </div>
 
           <button
-            onClick={openCreate}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500"
+            type="button"
+            onClick={() => void loadNotes()}
+            className="w-fit rounded-lg px-3 py-2 font-semibold hover:bg-white/60 hover:underline"
           >
-            <span className="text-lg leading-none">+</span>
-            New note
+            Retry
           </button>
         </div>
-      </header>
+      )}
 
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <section className="mb-8">
-          <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-            <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-blue-400">
-                Workspace
-              </p>
-
-              <h1 className="text-3xl font-semibold tracking-tight">
-                Your Notes
-              </h1>
-
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-                Capture ideas, technical notes and important thoughts in one
-                organized workspace.
-              </p>
-            </div>
-
-            <div className="text-sm text-zinc-500">
-              {notes.length} {notes.length === 1 ? "note" : "notes"}
-            </div>
-          </div>
-        </section>
-
-        <section className="mb-8">
-          <div className="relative max-w-2xl">
-            <svg
-              className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-                d="m21 21-4.35-4.35m1.35-5.15a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"
-              />
-            </svg>
-
-            <input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search notes, content or tags..."
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 py-3 pl-11 pr-4 text-sm text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-zinc-700"
-            />
-          </div>
-        </section>
-
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950">
-            <div className="flex items-center gap-3 text-sm text-zinc-500">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-blue-500" />
-              Loading notes...
-            </div>
-          </div>
-        ) : filteredNotes.length === 0 ? (
-          <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/50 px-6 text-center">
-            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-2xl">
-              📝
-            </div>
-
-            <h2 className="text-lg font-medium text-zinc-200">
-              {searchQuery
-                ? "No notes found"
-                : "Start writing your first note"}
-            </h2>
-
-            <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
-              {searchQuery
-                ? "Try a different search term or search by tag."
-                : "Keep ideas, learning notes and useful information close to your documents."}
-            </p>
-
-            {!searchQuery && (
-              <button
-                onClick={openCreate}
-                className="mt-6 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500"
-              >
+      {/* Notes */}
+      {loading ? (
+        <div className="kf-card flex min-h-[320px] items-center justify-center">
+          <Spinner label="Loading notes..." />
+        </div>
+      ) : filteredNotes.length === 0 ? (
+        <EmptyState
+          icon={<IconNote size={22} />}
+          title={
+            searchQuery
+              ? "No notes found"
+              : "Start writing your first note"
+          }
+          description={
+            searchQuery
+              ? "Try a different search term or search by tag."
+              : "Keep ideas and useful information close to your documents."
+          }
+          action={
+            !searchQuery ? (
+              <Button onClick={openCreate}>
+                <IconPlus size={16} />
                 Create your first note
-              </button>
-            )}
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <section>
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kf-accent-ink">
+                Your workspace
+              </p>
+
+              <h2 className="mt-1 text-xl font-semibold text-kf-ink">
+                Your notes
+              </h2>
+
+              <p className="mt-1 text-sm text-kf-muted">
+                {searchQuery
+                  ? `${filteredNotes.length} matching ${
+                      filteredNotes.length === 1 ? "note" : "notes"
+                    }`
+                  : "Recently updated notes, with pinned notes first."}
+              </p>
+            </div>
+
+            <span className="text-xs text-kf-faint">
+              {filteredNotes.length} shown
+            </span>
           </div>
-        ) : (
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {filteredNotes.map((note) => (
               <article
                 key={note._id}
-                className="group flex min-h-[250px] flex-col rounded-2xl border border-zinc-800 bg-zinc-950 p-5 transition hover:border-zinc-700 hover:bg-zinc-900/70"
+                className="kf-card group flex min-h-[270px] flex-col overflow-hidden p-5 transition duration-200 hover:-translate-y-0.5 hover:border-kf-border-strong"
               >
-                <div className="mb-4 flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="mb-2 flex items-center gap-2">
-                      {note.isPinned && (
-                        <span
-                          className="text-xs text-blue-400"
-                          title="Pinned"
-                        >
-                          📌
-                        </span>
-                      )}
+                {/* Card header */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {note.isPinned && <BadgePin />}
 
-                      <h2 className="truncate text-base font-semibold text-zinc-100">
+                      <h2 className="truncate text-base font-semibold text-kf-ink">
                         {note.title}
                       </h2>
                     </div>
 
-                    <p className="text-xs text-zinc-600">
+                    <p className="mt-2 text-xs text-kf-muted">
                       Updated{" "}
                       {formatDate(note.updatedAt || note.createdAt)}
                     </p>
@@ -466,103 +488,153 @@ export default function NotesPage() {
 
                   <div className="flex shrink-0 items-center gap-1">
                     <button
+                      type="button"
                       onClick={() => void togglePin(note)}
-                      title={note.isPinned ? "Unpin" : "Pin"}
-                      className="rounded-lg p-2 text-zinc-600 transition hover:bg-zinc-900 hover:text-blue-400"
+                      title={note.isPinned ? "Unpin note" : "Pin note"}
+                      aria-label={
+                        note.isPinned ? "Unpin note" : "Pin note"
+                      }
+                      className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold transition ${
+                        note.isPinned
+                          ? "bg-kf-accent-soft text-kf-accent-ink"
+                          : "text-kf-faint hover:bg-kf-surface-muted hover:text-kf-accent-ink"
+                      }`}
                     >
-                      {note.isPinned ? "📌" : "📍"}
+                      {note.isPinned ? "Pinned" : "Pin"}
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => void toggleFavorite(note)}
                       title={
                         note.isFavorite
                           ? "Remove favorite"
                           : "Add favorite"
                       }
-                      className="rounded-lg p-2 text-zinc-600 transition hover:bg-zinc-900 hover:text-yellow-400"
+                      aria-label={
+                        note.isFavorite
+                          ? "Remove favorite"
+                          : "Add favorite"
+                      }
+                      className="rounded-lg p-2 text-kf-faint transition hover:bg-kf-surface-muted hover:text-kf-favorite"
                     >
-                      {note.isFavorite ? "★" : "☆"}
+                      <IconStar
+                        size={15}
+                        className={
+                          note.isFavorite
+                            ? "fill-current text-kf-favorite"
+                            : undefined
+                        }
+                      />
                     </button>
                   </div>
                 </div>
 
-                <p className="line-clamp-6 flex-1 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
+                {/* Content */}
+                <p className="mt-5 line-clamp-7 flex-1 whitespace-pre-wrap text-sm leading-6 text-kf-ink-soft">
                   {note.content}
                 </p>
 
-                {note.tags?.length > 0 && (
+                {/* Tags */}
+                {note.tags && note.tags.length > 0 && (
                   <div className="mt-5 flex flex-wrap gap-2">
                     {note.tags.slice(0, 4).map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-md bg-zinc-900 px-2 py-1 text-[11px] text-zinc-500"
+                        className="rounded-md border border-kf-border bg-kf-surface-muted px-2 py-1 text-[11px] font-medium text-kf-muted"
                       >
                         #{tag}
                       </span>
                     ))}
+
+                    {note.tags.length > 4 && (
+                      <span className="rounded-md bg-kf-surface-muted px-2 py-1 text-[11px] text-kf-faint">
+                        +{note.tags.length - 4}
+                      </span>
+                    )}
                   </div>
                 )}
 
-                <div className="mt-5 flex items-center justify-between border-t border-zinc-900 pt-4">
+                {/* Footer */}
+                <div className="mt-5 flex items-center justify-between gap-3 border-t border-kf-border pt-4">
                   <button
+                    type="button"
                     onClick={() => openEdit(note)}
-                    className="text-xs font-medium text-zinc-400 transition hover:text-white"
+                    className="text-xs font-semibold text-kf-muted transition hover:text-kf-ink"
                   >
                     Edit note
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => setDeleteTarget(note)}
-                    className="text-xs font-medium text-zinc-600 transition hover:text-red-400"
+                    className="text-xs font-semibold text-kf-faint transition hover:text-kf-error"
                   >
                     Move to trash
                   </button>
                 </div>
               </article>
             ))}
-          </section>
-        )}
-      </div>
+          </div>
+        </section>
+      )}
 
+      {/* Create / Edit modal */}
       {(isCreating || editingNote) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-zinc-800 bg-[#0c0c0f] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-5">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-kf-ink/35 px-4 py-6 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !saving) {
+              resetEditor();
+            }
+          }}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-kf-border bg-kf-surface shadow-[var(--kf-shadow)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="note-editor-title"
+          >
+            {/* Modal header */}
+            <div className="flex items-start justify-between gap-4 border-b border-kf-border px-6 py-5 sm:px-7">
               <div>
-                <h2 className="text-lg font-semibold text-zinc-100">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kf-accent-ink">
+                  {editingNote ? "Edit knowledge" : "New knowledge"}
+                </p>
+
+                <h2
+                  id="note-editor-title"
+                  className="mt-1 text-xl font-semibold text-kf-ink"
+                >
                   {editingNote ? "Edit note" : "Create note"}
                 </h2>
 
-                <p className="mt-1 text-xs text-zinc-600">
+                <p className="mt-1.5 text-sm text-kf-muted">
                   Keep your thoughts organized and searchable.
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={resetEditor}
-                className="rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-900 hover:text-white"
+                disabled={saving}
+                aria-label="Close note editor"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg text-kf-faint transition hover:bg-kf-surface-muted hover:text-kf-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
-                ✕
+                ×
               </button>
             </div>
 
-            <form onSubmit={saveNote} className="space-y-5 p-6">
-              <div>
-                <label className="mb-2 block text-xs font-medium text-zinc-400">
-                  Title
-                </label>
-
-                <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="e.g. Java OOP revision"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-700"
-                />
-              </div>
+            <form onSubmit={saveNote} className="space-y-5 p-6 sm:p-7">
+              <Input
+                label="Title"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="e.g. Java OOP revision"
+              />
 
               <div>
-                <label className="mb-2 block text-xs font-medium text-zinc-400">
+                <label className="mb-2 block text-sm font-medium text-kf-ink-soft">
                   Content
                 </label>
 
@@ -570,100 +642,111 @@ export default function NotesPage() {
                   value={content}
                   onChange={(event) => setContent(event.target.value)}
                   placeholder="Write your note here..."
-                  rows={9}
-                  className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm leading-6 text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-700"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-medium text-zinc-400">
-                  Tags
-                </label>
-
-                <input
-                  value={tags}
-                  onChange={(event) => setTags(event.target.value)}
-                  placeholder="java, dsa, interview"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-700"
+                  rows={10}
+                  className="w-full resize-none rounded-xl border border-kf-border bg-kf-surface px-3.5 py-3 text-sm leading-6 text-kf-ink outline-none transition placeholder:text-kf-faint focus:border-kf-accent focus:ring-2 focus:ring-kf-accent/15"
                 />
 
-                <p className="mt-2 text-[11px] text-zinc-600">
-                  Separate multiple tags with commas.
+                <p className="mt-2 text-[11px] text-kf-faint">
+                  Write anything you want to remember, revise, or search
+                  later.
                 </p>
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-zinc-800 pt-5">
-                <button
+              <Input
+                label="Tags"
+                hint="Separate multiple tags with commas."
+                value={tags}
+                onChange={(event) => setTags(event.target.value)}
+                placeholder="java, dsa, interview"
+              />
+
+              <div className="flex flex-col-reverse gap-3 border-t border-kf-border pt-5 sm:flex-row sm:justify-end">
+                <Button
+                  variant="secondary"
                   type="button"
                   onClick={resetEditor}
-                  className="rounded-lg border border-zinc-800 px-4 py-2.5 text-sm text-zinc-400 transition hover:bg-zinc-900 hover:text-white"
+                  disabled={saving}
                 >
                   Cancel
-                </button>
+                </Button>
 
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saving && (
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-white" />
-                  )}
-
+                <Button type="submit" disabled={saving}>
                   {saving
                     ? "Saving..."
                     : editingNote
                       ? "Save changes"
                       : "Create note"}
-                </button>
+
+                  {!saving && <IconArrowRight size={15} />}
+                </Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* Delete modal */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-[#0c0c0f] p-6 shadow-2xl">
-            <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-red-500/10 text-red-400">
-              🗑
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-kf-ink/35 px-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleting) {
+              setDeleteTarget(null);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-kf-border bg-kf-surface p-6 shadow-[var(--kf-shadow)] sm:p-7"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-note-title"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-kf-error-soft text-kf-error">
+              <IconTrash size={20} />
             </div>
 
-            <h2 className="text-lg font-semibold text-zinc-100">
+            <h2
+              id="delete-note-title"
+              className="mt-5 text-xl font-semibold text-kf-ink"
+            >
               Move note to trash?
             </h2>
 
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
-              <span className="text-zinc-300">
+            <p className="mt-2 text-sm leading-6 text-kf-muted">
+              <span className="font-semibold text-kf-ink">
                 {deleteTarget.title}
               </span>{" "}
               will be moved to trash. You can restore it later.
             </p>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setDeleteTarget(null)}
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
                 disabled={deleting}
-                className="rounded-lg border border-zinc-800 px-4 py-2.5 text-sm text-zinc-400 transition hover:bg-zinc-900 hover:text-white disabled:opacity-50"
+                onClick={() => setDeleteTarget(null)}
               >
                 Cancel
-              </button>
+              </Button>
 
-              <button
-                onClick={() => void deleteNote()}
+              <Button
+                variant="danger"
                 disabled={deleting}
-                className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-50"
+                onClick={() => void deleteNote()}
               >
-                {deleting && (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-200 border-t-white" />
-                )}
-
                 {deleting ? "Moving..." : "Move to trash"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
-    </main>
+    </div>
+  );
+}
+
+function BadgePin() {
+  return (
+    <span className="shrink-0 rounded-full bg-kf-accent-soft px-2 py-0.5 text-[10px] font-semibold text-kf-accent-ink">
+      Pinned
+    </span>
   );
 }

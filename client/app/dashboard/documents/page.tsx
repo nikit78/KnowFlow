@@ -1,257 +1,173 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useDashboard } from "../layout";
+import { apiFetch, ApiError } from "@/lib/api";
+import type { DocumentStatus, KnowledgeDocument } from "@/lib/types";
+import {
+  formatBytes,
+  formatDate,
+  formatDocumentType,
+  getDocumentStatusLabel,
+  getDocumentStatusTone,
+  getFileExtension,
+} from "@/lib/format";
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
+import Spinner from "@/components/ui/Spinner";
+import {
+  IconArrowRight,
+  IconDocument,
+  IconPlus,
+  IconSearch,
+  IconStar,
+  IconTrash,
+  IconUpload,
+} from "@/components/icons";
 
-const API_URL = "http://localhost:5000/api";
-
-type DocumentStatus =
-  | "uploaded"
-  | "processing"
-  | "processed"
-  | "failed";
-
-type Document = {
-  _id: string;
-  title: string;
-  originalName: string;
-  documentType: string;
-  fileSize: number;
-  status: DocumentStatus;
-  tags: string[];
-  isFavorite: boolean;
-  createdAt: string;
+type DocumentsResponse = {
+  success: boolean;
+  documents?: KnowledgeDocument[];
+  message?: string;
 };
 
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function getExtension(fileName: string) {
-  const lastDot = fileName.lastIndexOf(".");
-
-  if (lastDot === -1) {
-    return "FILE";
-  }
-
-  return fileName.slice(lastDot + 1).toUpperCase();
-}
-
-function getDocumentTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    "research-paper": "Research Paper",
-    "annual-report": "Annual Report",
-    "financial-statement": "Financial Statement",
-    "lecture-notes": "Lecture Notes",
-    book: "Book",
-    other: "Other",
-  };
-
-  return labels[type] || type;
-}
-
-function getStatusLabel(status: DocumentStatus) {
-  const labels: Record<DocumentStatus, string> = {
-    uploaded: "Uploaded",
-    processing: "Processing",
-    processed: "Processed",
-    failed: "Failed",
-  };
-
-  return labels[status];
-}
-
-function formatDate(dateString: string) {
-  const date = new Date(dateString);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown date";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
-}
-
 export default function DocumentsPage() {
+  useDashboard();
   const router = useRouter();
 
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
   const [documentToTrash, setDocumentToTrash] =
-  useState<Document | null>(null);
-
-const [deleting, setDeleting] = useState(false);
-
-  // ==========================
-  // Toggle Favorite
-  // ==========================
-
-  const toggleFavorite = async (documentId: string) => {
-    try {
-      setError("");
-
-      const response = await fetch(
-        `${API_URL}/documents/${documentId}/favorite`,
-        {
-          method: "PATCH",
-          credentials: "include",
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
-        return;
-      }
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.message || "Failed to update favorite."
-        );
-      }
-
-      setDocuments((currentDocuments) =>
-        currentDocuments.map((document) =>
-          document._id === documentId
-            ? {
-                ...document,
-                isFavorite: !document.isFavorite,
-              }
-            : document
-        )
-      );
-    } catch (favoriteError) {
-      console.error("Favorite update error:", favoriteError);
-
-      setError(
-        favoriteError instanceof Error
-          ? favoriteError.message
-          : "Failed to update favorite."
-      );
-    }
-  };
-
-  const moveToTrash = async () => {
-  if (!documentToTrash) {
-    return;
-  }
-
-  try {
-    setDeleting(true);
-    setError("");
-
-    const response = await fetch(
-      `${API_URL}/documents/${documentToTrash._id}`,
-      {
-        method: "DELETE",
-        credentials: "include",
-      }
-    );
-
-    const data = await response.json();
-
-    if (response.status === 401) {
-      router.push("/auth/login");
-      return;
-    }
-
-    if (!response.ok || !data.success) {
-      throw new Error(
-        data.message || "Failed to move document to trash."
-      );
-    }
-
-    setDocuments((currentDocuments) =>
-      currentDocuments.filter(
-        (document) =>
-          document._id !== documentToTrash._id
-      )
-    );
-
-    setDocumentToTrash(null);
-  } catch (trashError) {
-    console.error("Move to trash error:", trashError);
-
-    setError(
-      trashError instanceof Error
-        ? trashError.message
-        : "Failed to move document to trash."
-    );
-  } finally {
-    setDeleting(false);
-  }
-};
-
-  // ==========================
-  // Load Documents
-  // ==========================
+    useState<KnowledgeDocument | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    const loadDocuments = async () => {
+    let cancelled = false;
+
+    async function load() {
       try {
         setLoading(true);
         setError("");
 
-        const response = await fetch(
-          `${API_URL}/documents?page=1&limit=20`,
-          {
-            credentials: "include",
-          }
+        const data = await apiFetch<DocumentsResponse>(
+          "/documents?page=1&limit=20",
         );
 
-        const data = await response.json();
-
-        if (response.status === 401) {
-          router.push("/auth/login");
+        if (!cancelled) {
+          setDocuments(data.documents ?? []);
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          router.replace("/auth/login");
           return;
         }
 
-        if (!response.ok || !data.success) {
-          throw new Error(
-            data.message || "Failed to load documents."
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load documents.",
           );
         }
-
-        setDocuments(data.documents || []);
-      } catch (documentsError) {
-        setError(
-          documentsError instanceof Error
-            ? documentsError.message
-            : "Something went wrong while loading documents."
-        );
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    };
+    }
 
-    loadDocuments();
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
-  // ==========================
-  // Filtered Documents
-  // ==========================
+  async function toggleFavorite(documentId: string) {
+    try {
+      setError("");
+
+      await apiFetch(`/documents/${documentId}/favorite`, {
+        method: "PATCH",
+      });
+
+      setDocuments((current) =>
+        current.map((doc) =>
+          doc._id === documentId
+            ? {
+                ...doc,
+                isFavorite: !doc.isFavorite,
+              }
+            : doc,
+        ),
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update favorite.",
+      );
+    }
+  }
+
+  async function moveToTrash() {
+    if (!documentToTrash) return;
+
+    try {
+      setDeleting(true);
+      setError("");
+
+      await apiFetch(`/documents/${documentToTrash._id}`, {
+        method: "DELETE",
+      });
+
+      setDocuments((current) =>
+        current.filter(
+          (doc) => doc._id !== documentToTrash._id,
+        ),
+      );
+
+      setDocumentToTrash(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to move document to trash.",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const documentTypes = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          documents.map(
+            (document) => document.documentType,
+          ),
+        ),
+      ),
+    [documents],
+  );
 
   const filteredDocuments = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -262,7 +178,7 @@ const [deleting, setDeleting] = useState(false);
         document.title.toLowerCase().includes(query) ||
         document.originalName.toLowerCase().includes(query) ||
         document.tags.some((tag) =>
-          tag.toLowerCase().includes(query)
+          tag.toLowerCase().includes(query),
         );
 
       const matchesType =
@@ -273,7 +189,11 @@ const [deleting, setDeleting] = useState(false);
         statusFilter === "all" ||
         document.status === statusFilter;
 
-      return matchesSearch && matchesType && matchesStatus;
+      return (
+        matchesSearch &&
+        matchesType &&
+        matchesStatus
+      );
     });
   }, [
     documents,
@@ -282,629 +202,331 @@ const [deleting, setDeleting] = useState(false);
     statusFilter,
   ]);
 
-  // ==========================
-  // Filter Options
-  // ==========================
+  const hasFilters =
+    searchQuery.trim() !== "" ||
+    typeFilter !== "all" ||
+    statusFilter !== "all";
 
-  const documentTypes = useMemo(() => {
-    const types = documents.map(
-      (document) => document.documentType
-    );
+  const processedCount = documents.filter(
+    (document) => document.status === "processed",
+  ).length;
 
-    return Array.from(new Set(types));
-  }, [documents]);
+  const favoriteCount = documents.filter(
+    (document) => document.isFavorite,
+  ).length;
 
-  // ==========================
-  // Render
-  // ==========================
+  function clearFilters() {
+    setSearchQuery("");
+    setTypeFilter("all");
+    setStatusFilter("all");
+  }
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100">
-      {/* ========================== */}
-      {/* Top Bar */}
-      {/* ========================== */}
+    <div className="mx-auto max-w-6xl space-y-7">
+      {/* Header */}
+      <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-2xl">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-kf-accent-ink">
+            Knowledge library
+          </p>
 
-      <header className="fixed left-0 right-0 top-0 z-40 h-[78px] border-b border-white/[0.06] bg-[#09090b]/95 backdrop-blur-xl">
-        <div className="flex h-full items-center justify-between px-6 lg:px-8">
-          <div className="flex items-center gap-5">
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard")}
-              className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-200"
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              >
-                <path
-                  d="M19 12H5M12 19l-7-7 7-7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+          <h1 className="text-3xl font-bold tracking-tight text-kf-ink sm:text-[34px]">
+            Documents
+          </h1>
 
-              Dashboard
-            </button>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-kf-muted">
+            Keep your knowledge organized, searchable,
+            and ready for AI-powered retrieval.
+          </p>
+        </div>
 
-            <span className="text-zinc-700">/</span>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="rounded-xl border border-kf-border bg-kf-surface px-4 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-kf-faint">
+              Library
+            </p>
 
-            <span className="text-sm font-medium text-zinc-200">
-              Documents
-            </span>
+            <p className="mt-0.5 text-sm font-semibold text-kf-ink">
+              {loading
+                ? "—"
+                : `${documents.length} ${
+                    documents.length === 1
+                      ? "document"
+                      : "documents"
+                  }`}
+            </p>
+          </div>
+
+          <Button href="/dashboard/documents/upload">
+            <IconPlus size={16} />
+            Add document
+          </Button>
+        </div>
+      </header>
+
+      {/* Error */}
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-4 rounded-2xl border border-kf-error/20 bg-kf-error-soft px-4 py-3.5 text-sm text-kf-error"
+        >
+          <div className="flex items-start gap-3">
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-kf-error" />
+
+            <p className="leading-5">{error}</p>
           </div>
 
           <button
             type="button"
-            onClick={() =>
-              router.push("/dashboard/documents/upload")
-            }
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+            onClick={() => setError("")}
+            className="shrink-0 text-xs font-semibold hover:underline"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            >
-              <path
-                d="M12 5v14M5 12h14"
-                strokeLinecap="round"
-              />
-            </svg>
-
-            Add document
+            Dismiss
           </button>
         </div>
-      </header>
+      )}
 
-      {/* ========================== */}
-      {/* Main */}
-      {/* ========================== */}
+      {/* Metrics */}
+      {!loading && documents.length > 0 && (
+        <section className="grid gap-3 sm:grid-cols-3">
+          <LibraryMetric
+            label="Total documents"
+            value={documents.length}
+            detail="In your workspace"
+          />
 
-      <main className="mx-auto max-w-6xl px-6 pb-20 pt-32 lg:px-8">
-        {/* Heading */}
+          <LibraryMetric
+            label="Ready for search"
+            value={processedCount}
+            detail="Successfully processed"
+          />
 
-        <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-          <div>
-            <p className="mb-3 text-sm font-medium text-blue-400">
-              Knowledge workspace
-            </p>
+          <LibraryMetric
+            label="Favorites"
+            value={favoriteCount}
+            detail="Saved for quick access"
+            icon={
+              <IconStar
+                size={16}
+                className="mb-1 text-kf-favorite"
+              />
+            }
+          />
+        </section>
+      )}
 
-            <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Documents
-            </h1>
-
-            <p className="mt-3 max-w-2xl text-base leading-7 text-zinc-500">
-              Manage the documents in your knowledge workspace
-              and keep everything organized in one place.
-            </p>
-          </div>
-
-          <div className="shrink-0 rounded-lg border border-white/[0.07] bg-white/[0.02] px-4 py-2.5">
-            <p className="text-xs text-zinc-600">
-              Workspace documents
-            </p>
-
-            <p className="mt-0.5 text-sm font-medium text-zinc-300">
-              {loading ? "—" : documents.length}
-            </p>
-          </div>
-        </div>
-
-        {/* ========================== */}
-        {/* Search + Filters */}
-        {/* ========================== */}
-
-        {!loading &&
-          !error &&
-          documents.length > 0 && (
-            <div className="mb-5 rounded-2xl border border-white/[0.07] bg-[#0d0d0f] p-3">
-              <div className="flex flex-col gap-3 lg:flex-row">
-                {/* Search */}
-
-                <div className="relative min-w-0 flex-1">
-                  <svg
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <circle cx="11" cy="11" r="6.5" />
-
-                    <path d="m16 16 4.5 4.5" />
-                  </svg>
-
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(event) =>
-                      setSearchQuery(event.target.value)
-                    }
-                    placeholder="Search documents, filenames, or tags..."
-                    className="h-11 w-full rounded-xl border border-white/[0.07] bg-white/[0.025] pl-10 pr-4 text-sm text-zinc-200 outline-none placeholder:text-zinc-700 transition focus:border-blue-500/30 focus:bg-white/[0.035]"
-                  />
-                </div>
-
-                {/* Type Filter */}
-
-                <select
-                  value={typeFilter}
-                  onChange={(event) =>
-                    setTypeFilter(event.target.value)
-                  }
-                  className="h-11 rounded-xl border border-white/[0.07] bg-[#111114] px-3 text-sm text-zinc-400 outline-none transition focus:border-blue-500/30"
-                >
-                  <option value="all">All types</option>
-
-                  {documentTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {getDocumentTypeLabel(type)}
-                    </option>
-                  ))}
-                </select>
-
-                {/* Status Filter */}
-
-                <select
-                  value={statusFilter}
-                  onChange={(event) =>
-                    setStatusFilter(event.target.value)
-                  }
-                  className="h-11 rounded-xl border border-white/[0.07] bg-[#111114] px-3 text-sm text-zinc-400 outline-none transition focus:border-blue-500/30"
-                >
-                  <option value="all">All statuses</option>
-
-                  <option value="processed">
-                    Processed
-                  </option>
-
-                  <option value="processing">
-                    Processing
-                  </option>
-
-                  <option value="uploaded">
-                    Uploaded
-                  </option>
-
-                  <option value="failed">
-                    Failed
-                  </option>
-                </select>
-
-                {/* Clear */}
-
-                {(searchQuery ||
-                  typeFilter !== "all" ||
-                  statusFilter !== "all") && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery("");
-                      setTypeFilter("all");
-                      setStatusFilter("all");
-                    }}
-                    className="h-11 rounded-xl border border-white/[0.07] px-4 text-sm text-zinc-500 transition hover:bg-white/[0.03] hover:text-zinc-200"
-                  >
-                    Clear
-                  </button>
-                )}
+      {/* Search and filters */}
+      {!loading && documents.length > 0 && (
+        <section className="kf-card overflow-hidden">
+          <div className="border-b border-kf-border px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-kf-accent-soft text-kf-accent-ink">
+                <IconSearch size={16} />
               </div>
 
-              {/* Filter result count */}
+              <div>
+                <h2 className="text-sm font-semibold text-kf-ink">
+                  Find a document
+                </h2>
 
-              {(searchQuery ||
-                typeFilter !== "all" ||
-                statusFilter !== "all") && (
-                <p className="px-1 pt-3 text-xs text-zinc-600">
-                  Showing {filteredDocuments.length} of{" "}
-                  {documents.length} documents
+                <p className="mt-0.5 text-xs text-kf-muted">
+                  Search by title, filename, or tags
                 </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4">
+            <div className="flex flex-col gap-3 lg:flex-row">
+              <div className="relative min-w-0 flex-1">
+                <IconSearch
+                  size={16}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-kf-faint"
+                />
+
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) =>
+                    setSearchQuery(event.target.value)
+                  }
+                  placeholder="Search documents, filenames, or tags..."
+                  aria-label="Search documents"
+                  className="h-11 w-full rounded-xl border border-kf-border bg-kf-surface pl-10 pr-4 text-sm text-kf-ink outline-none transition placeholder:text-kf-faint focus:border-kf-accent focus:ring-2 focus:ring-kf-accent/15"
+                />
+              </div>
+
+              <select
+                value={typeFilter}
+                onChange={(event) =>
+                  setTypeFilter(event.target.value)
+                }
+                aria-label="Filter by document type"
+                className="h-11 rounded-xl border border-kf-border bg-kf-surface px-3.5 text-sm text-kf-ink outline-none transition focus:border-kf-accent focus:ring-2 focus:ring-kf-accent/15"
+              >
+                <option value="all">All types</option>
+
+                {documentTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {formatDocumentType(type)}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value)
+                }
+                aria-label="Filter by document status"
+                className="h-11 rounded-xl border border-kf-border bg-kf-surface px-3.5 text-sm text-kf-ink outline-none transition focus:border-kf-accent focus:ring-2 focus:ring-kf-accent/15"
+              >
+                <option value="all">All statuses</option>
+
+                {(
+                  [
+                    "processed",
+                    "processing",
+                    "uploaded",
+                    "failed",
+                  ] as DocumentStatus[]
+                ).map((status) => (
+                  <option key={status} value={status}>
+                    {getDocumentStatusLabel(status)}
+                  </option>
+                ))}
+              </select>
+
+              {hasFilters && (
+                <Button
+                  variant="secondary"
+                  onClick={clearFilters}
+                >
+                  Clear
+                </Button>
               )}
             </div>
-          )}
 
-        {/* ========================== */}
-        {/* Loading */}
-        {/* ========================== */}
+            {hasFilters && (
+              <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-kf-muted">
+                  Showing{" "}
+                  <span className="font-semibold text-kf-ink">
+                    {filteredDocuments.length}
+                  </span>{" "}
+                  of {documents.length} documents
+                </p>
 
-        {loading ? (
-          <section className="rounded-2xl border border-white/[0.08] bg-[#0d0d0f]">
-            <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
-              <div className="h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-blue-500" />
-
-              <p className="mt-4 text-sm text-zinc-500">
-                Loading your documents...
-              </p>
-            </div>
-          </section>
-        ) : error ? (
-          /* ========================== */
-          /* Error */
-          /* ========================== */
-
-          <section className="rounded-2xl border border-red-500/15 bg-[#0d0d0f]">
-            <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-red-500/10 bg-red-500/[0.06] text-red-400">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                >
-                  <circle cx="12" cy="12" r="9" />
-
-                  <path
-                    d="M12 8v5"
-                    strokeLinecap="round"
-                  />
-
-                  <path
-                    d="M12 16h.01"
-                    strokeLinecap="round"
-                  />
-                </svg>
+                {searchQuery && (
+                  <p className="truncate text-xs text-kf-faint">
+                    Search: “{searchQuery}”
+                  </p>
+                )}
               </div>
+            )}
+          </div>
+        </section>
+      )}
 
-              <h2 className="mt-5 text-base font-semibold text-zinc-200">
-                Unable to load documents
-              </h2>
+      {/* Main content */}
+      {loading ? (
+        <div className="kf-card flex min-h-[360px] items-center justify-center">
+          <Spinner label="Loading documents..." />
+        </div>
+      ) : documents.length === 0 ? (
+        <EmptyState
+          icon={<IconDocument size={22} />}
+          title="Your library is empty"
+          description="Upload your first document and KnowFlow will prepare it for search and knowledge retrieval."
+          action={
+            <Button href="/dashboard/documents/upload">
+              <IconUpload size={16} />
+              Add your first document
+            </Button>
+          }
+        />
+      ) : filteredDocuments.length === 0 ? (
+        <EmptyState
+          icon={<IconSearch size={22} />}
+          title="No matching documents"
+          description="Try a different search term or adjust your filters to find what you need."
+          action={
+            <Button
+              variant="secondary"
+              onClick={clearFilters}
+            >
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <section className="kf-card overflow-hidden">
+          {/* Desktop heading */}
+          <div className="hidden border-b border-kf-border bg-kf-surface-muted/50 px-5 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_130px_120px]">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-kf-faint">
+              Document
+            </span>
 
-              <p className="mt-2 max-w-md text-sm leading-6 text-zinc-600">
-                {error}
-              </p>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-kf-faint">
+              Status
+            </span>
 
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="mt-5 rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.03] hover:text-zinc-200"
-              >
-                Try again
-              </button>
-            </div>
-          </section>
-        ) : documents.length === 0 ? (
-          /* ========================== */
-          /* Empty Workspace */
-          /* ========================== */
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-kf-faint">
+              Added
+            </span>
+          </div>
 
-          <section className="rounded-2xl border border-white/[0.08] bg-[#0d0d0f]">
-            <div className="flex min-h-[420px] flex-col items-center justify-center px-6 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-blue-400/10 bg-blue-500/[0.07] text-blue-400">
-                <svg
-                  width="25"
-                  height="25"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                >
-                  <path
-                    d="M6 3h8l4 4v14H6z"
-                    strokeLinejoin="round"
-                  />
-
-                  <path
-                    d="M14 3v5h4"
-                    strokeLinejoin="round"
-                  />
-
-                  <path
-                    d="M9 13h6M9 17h4"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
-
-              <h2 className="mt-5 text-lg font-semibold text-zinc-200">
-                No documents yet
-              </h2>
-
-              <p className="mt-2 max-w-md text-sm leading-6 text-zinc-600">
-                Upload your first document and KnowFlow will
-                prepare it for search and knowledge retrieval.
-              </p>
-
-              <button
-                type="button"
-                onClick={() =>
-                  router.push("/dashboard/documents/upload")
+          <div className="divide-y divide-kf-border">
+            {filteredDocuments.map((document) => (
+              <DocumentRow
+                key={document._id}
+                document={document}
+                onFavorite={() =>
+                  void toggleFavorite(document._id)
                 }
-                className="mt-6 flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <path
-                    d="M12 5v14M5 12h14"
-                    strokeLinecap="round"
-                  />
-                </svg>
+                onTrash={() =>
+                  setDocumentToTrash(document)
+                }
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
-                Add your first document
-              </button>
+      {/* Upload hint */}
+      {!loading && documents.length > 0 && (
+        <div className="flex flex-col gap-4 rounded-2xl border border-dashed border-kf-border bg-kf-surface/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-kf-accent-soft text-kf-accent-ink">
+              <IconUpload size={16} />
             </div>
-          </section>
-        ) : filteredDocuments.length === 0 ? (
-          /* ========================== */
-          /* No Search Results */
-          /* ========================== */
 
-          <section className="rounded-2xl border border-white/[0.08] bg-[#0d0d0f]">
-            <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.025] text-zinc-500">
-                <svg
-                  width="21"
-                  height="21"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                >
-                  <circle cx="11" cy="11" r="6.5" />
-
-                  <path d="m16 16 4.5 4.5" />
-                </svg>
-              </div>
-
-              <h2 className="mt-5 text-base font-semibold text-zinc-200">
-                No matching documents
-              </h2>
-
-              <p className="mt-2 max-w-md text-sm leading-6 text-zinc-600">
-                Try changing your search or filters to find
-                what you are looking for.
+            <div>
+              <p className="text-sm font-medium text-kf-ink">
+                Have another document?
               </p>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery("");
-                  setTypeFilter("all");
-                  setStatusFilter("all");
-                }}
-                className="mt-5 rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.03] hover:text-zinc-200"
-              >
-                Clear filters
-              </button>
+              <p className="mt-0.5 text-xs leading-5 text-kf-muted">
+                Add PDFs, documents, or supported text files
+                to your library.
+              </p>
             </div>
-          </section>
-        ) : (
-          /* ========================== */
-          /* Documents List */
-          /* ========================== */
+          </div>
 
-          <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0d0f]">
-            {/* List header */}
+          <Link
+            href="/dashboard/documents/upload"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-kf-accent-ink transition hover:gap-2"
+          >
+            Upload now
+            <IconArrowRight size={15} />
+          </Link>
+        </div>
+      )}
 
-            <div className="border-b border-white/[0.06] px-5 py-4 sm:px-6">
-              <div className="grid grid-cols-[minmax(0,1fr)_120px_120px] items-center gap-4 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
-                <span>Document</span>
-
-                <span className="hidden sm:block">
-                  Status
-                </span>
-
-                <span className="hidden sm:block">
-                  Added
-                </span>
-              </div>
-            </div>
-
-            {/* Documents */}
-
-            <div className="divide-y divide-white/[0.05]">
-              {filteredDocuments.map((document) => (
-                <div
-                  key={document._id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    router.push(
-                      `/dashboard/documents/${document._id}`
-                    )
-                  }
-                  onKeyDown={(event) => {
-                    if (
-                      event.key === "Enter" ||
-                      event.key === " "
-                    ) {
-                      event.preventDefault();
-
-                      router.push(
-                        `/dashboard/documents/${document._id}`
-                      );
-                    }
-                  }}
-                  className="group grid w-full cursor-pointer grid-cols-1 gap-4 px-5 py-5 text-left transition hover:bg-white/[0.018] focus:outline-none focus:ring-1 focus:ring-inset focus:ring-blue-500/30 sm:grid-cols-[minmax(0,1fr)_120px_120px] sm:items-center sm:gap-4 sm:px-6"
-                >
-                  {/* Document */}
-
-                  <div className="flex min-w-0 items-start gap-4">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-blue-400/10 bg-blue-500/[0.07] text-[10px] font-bold tracking-wide text-blue-400">
-                      {getExtension(document.originalName)}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium text-zinc-200 group-hover:text-white">
-                          {document.title}
-                        </p>
-
-                        {/* Favorite */}
-
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleFavorite(document._id);
-                          }}
-                          aria-label={
-                            document.isFavorite
-                              ? "Remove from favorites"
-                              : "Add to favorites"
-                          }
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-amber-400"
-                        >
-                          <svg
-                            width="15"
-                            height="15"
-                            viewBox="0 0 24 24"
-                            fill={
-                              document.isFavorite
-                                ? "currentColor"
-                                : "none"
-                            }
-                            stroke="currentColor"
-                            strokeWidth="1.7"
-                            className={
-                              document.isFavorite
-                                ? "text-amber-400"
-                                : "text-zinc-600"
-                            }
-                          >
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01z" />
-                          </svg>
-                        </button>
-                        <button
-  type="button"
-  onClick={(event) => {
-    event.stopPropagation();
-    setDocumentToTrash(document);
-  }}
-  aria-label={`Move ${document.title} to trash`}
-  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-600 transition hover:bg-red-500/[0.08] hover:text-red-400"
->
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.7"
-  >
-    <path
-      d="M4 7h16"
-      strokeLinecap="round"
-    />
-
-    <path
-      d="M10 11v6M14 11v6"
-      strokeLinecap="round"
-    />
-
-    <path
-      d="M6 7l1 13h10l1-13"
-      strokeLinejoin="round"
-    />
-
-    <path
-      d="M9 7V4h6v3"
-      strokeLinejoin="round"
-    />
-  </svg>
-</button>
-                      </div>
-
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600">
-                        <span>
-                          {getDocumentTypeLabel(
-                            document.documentType
-                          )}
-                        </span>
-
-                        <span className="text-zinc-800">
-                          •
-                        </span>
-
-                        <span>
-                          {formatFileSize(document.fileSize)}
-                        </span>
-
-                        {document.tags.length > 0 && (
-                          <>
-                            <span className="text-zinc-800">
-                              •
-                            </span>
-
-                            <span className="truncate">
-                              {document.tags
-                                .slice(0, 3)
-                                .join(", ")}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <svg
-                      className="mt-1 shrink-0 text-zinc-700 transition group-hover:translate-x-0.5 group-hover:text-zinc-400"
-                      width="17"
-                      height="17"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                    >
-                      <path
-                        d="M9 18l6-6-6-6"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-
-                  {/* Status */}
-
-                  <div className="sm:block">
-                    <span
-                      className={`inline-flex rounded-md border px-2.5 py-1 text-[11px] font-medium ${
-                        document.status === "processed"
-                          ? "border-emerald-500/15 bg-emerald-500/[0.06] text-emerald-400"
-                          : document.status === "processing"
-                            ? "border-amber-500/15 bg-amber-500/[0.06] text-amber-400"
-                            : document.status === "failed"
-                              ? "border-red-500/15 bg-red-500/[0.06] text-red-400"
-                              : "border-white/[0.08] bg-white/[0.025] text-zinc-500"
-                      }`}
-                    >
-                      {getStatusLabel(document.status)}
-                    </span>
-                  </div>
-
-                  {/* Date */}
-
-                  <div className="hidden text-xs text-zinc-600 sm:block">
-                    {formatDate(document.createdAt)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </main>
-        {/* ========================== */}
-      {/* Move to Trash Dialog */}
-      {/* ========================== */}
-
+      {/* Trash confirmation */}
       {documentToTrash && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-kf-ink/30 px-4 backdrop-blur-sm"
           onClick={() => {
             if (!deleting) {
               setDocumentToTrash(null);
@@ -915,89 +537,234 @@ const [deleting, setDeleting] = useState(false);
             role="dialog"
             aria-modal="true"
             aria-labelledby="trash-dialog-title"
-            className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#111114] p-6 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-kf-border bg-kf-surface shadow-[var(--kf-shadow)]"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
-            {/* Icon */}
+            <div className="border-b border-kf-border px-6 py-5">
+              <div className="flex items-start gap-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-kf-error-soft text-kf-error">
+                  <IconTrash size={20} />
+                </div>
 
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-500/10 bg-red-500/[0.07] text-red-400">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-              >
-                <path
-                  d="M4 7h16"
-                  strokeLinecap="round"
-                />
+                <div>
+                  <h2
+                    id="trash-dialog-title"
+                    className="text-lg font-semibold text-kf-ink"
+                  >
+                    Move to trash?
+                  </h2>
 
-                <path
-                  d="M10 11v6M14 11v6"
-                  strokeLinecap="round"
-                />
-
-                <path
-                  d="M6 7l1 13h10l1-13"
-                  strokeLinejoin="round"
-                />
-
-                <path
-                  d="M9 7V4h6v3"
-                  strokeLinejoin="round"
-                />
-              </svg>
+                  <p className="mt-1 text-sm leading-5 text-kf-muted">
+                    The document will be removed from your
+                    active library.
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {/* Content */}
+            <div className="px-6 py-5">
+              <div className="rounded-xl border border-kf-border bg-kf-surface-muted px-4 py-3">
+                <p className="truncate text-sm font-semibold text-kf-ink">
+                  {documentToTrash.title}
+                </p>
 
-            <h2
-              id="trash-dialog-title"
-              className="mt-5 text-lg font-semibold text-white"
-            >
-              Move document to trash?
-            </h2>
+                <p className="mt-1 truncate text-xs text-kf-muted">
+                  {documentToTrash.originalName}
+                </p>
+              </div>
 
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
-              <span className="font-medium text-zinc-300">
-                {documentToTrash.title}
-              </span>{" "}
-              will be moved to Trash. You can restore it
-              later.
-            </p>
+              <p className="mt-3 text-xs leading-5 text-kf-muted">
+                You can restore this document later from
+                Trash.
+              </p>
 
-            {/* Actions */}
+              <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <Button
+                  variant="secondary"
+                  disabled={deleting}
+                  onClick={() =>
+                    setDocumentToTrash(null)
+                  }
+                >
+                  Cancel
+                </Button>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => setDocumentToTrash(null)}
-                className="rounded-lg border border-white/[0.08] px-4 py-2.5 text-sm font-medium text-zinc-400 transition hover:bg-white/[0.03] hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={moveToTrash}
-                className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {deleting && (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                )}
-
-                {deleting
-                  ? "Moving..."
-                  : "Move to trash"}
-              </button>
+                <Button
+                  variant="danger"
+                  disabled={deleting}
+                  onClick={() => void moveToTrash()}
+                >
+                  {deleting
+                    ? "Moving..."
+                    : "Move to trash"}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function LibraryMetric({
+  label,
+  value,
+  detail,
+  icon,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-kf-border bg-kf-surface px-4 py-4 transition hover:border-kf-border-strong">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-kf-faint">
+        {label}
+      </p>
+
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <p className="text-2xl font-bold tracking-tight text-kf-ink">
+          {value}
+        </p>
+
+        {icon ?? (
+          <IconDocument
+            size={16}
+            className="mb-1 text-kf-faint"
+          />
+        )}
+      </div>
+
+      <p className="mt-1 text-xs text-kf-muted">
+        {detail}
+      </p>
+    </div>
+  );
+}
+
+function DocumentRow({
+  document,
+  onFavorite,
+  onTrash,
+}: {
+  document: KnowledgeDocument;
+  onFavorite: () => void;
+  onTrash: () => void;
+}) {
+  const extension = getFileExtension(
+    document.originalName,
+  );
+
+  return (
+    <div className="group grid gap-4 px-4 py-4 transition hover:bg-kf-surface-muted sm:grid-cols-[minmax(0,1fr)_130px_120px] sm:px-5">
+      {/* Document */}
+      <div className="flex min-w-0 items-start gap-3.5">
+        <Link
+          href={`/dashboard/documents/${document._id}`}
+          aria-label={`Open ${document.title}`}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-kf-border bg-kf-accent-soft text-[10px] font-bold uppercase tracking-wide text-kf-accent-ink transition hover:border-kf-accent/30"
+        >
+          {extension}
+        </Link>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Link
+              href={`/dashboard/documents/${document._id}`}
+              className="min-w-0 truncate text-sm font-semibold text-kf-ink transition hover:text-kf-accent-ink"
+            >
+              {document.title}
+            </Link>
+
+            <button
+              type="button"
+              onClick={onFavorite}
+              aria-label={
+                document.isFavorite
+                  ? "Remove from favorites"
+                  : "Add to favorites"
+              }
+              aria-pressed={document.isFavorite}
+              title={
+                document.isFavorite
+                  ? "Remove from favorites"
+                  : "Add to favorites"
+              }
+              className="shrink-0 rounded-lg p-1.5 text-kf-faint transition hover:bg-kf-surface hover:text-kf-favorite focus:outline-none focus:ring-2 focus:ring-kf-accent/20"
+            >
+              <IconStar
+                size={15}
+                className={
+                  document.isFavorite
+                    ? "fill-current text-kf-favorite"
+                    : ""
+                }
+              />
+            </button>
+
+            <button
+              type="button"
+              onClick={onTrash}
+              aria-label={`Move ${document.title} to trash`}
+              title="Move to trash"
+              className="shrink-0 rounded-lg p-1.5 text-kf-faint opacity-70 transition hover:bg-kf-error-soft hover:text-kf-error focus:outline-none focus:ring-2 focus:ring-kf-error/20 sm:opacity-0 sm:group-hover:opacity-100"
+            >
+              <IconTrash size={15} />
+            </button>
+          </div>
+
+          <p className="mt-1 truncate text-xs text-kf-muted">
+            {formatDocumentType(
+              document.documentType,
+            )}{" "}
+            · {formatBytes(document.fileSize)}
+          </p>
+
+          {document.tags.length > 0 && (
+            <div className="mt-2 flex min-w-0 items-center gap-1.5 overflow-hidden">
+              {document.tags
+                .slice(0, 3)
+                .map((tag) => (
+                  <span
+                    key={tag}
+                    className="shrink-0 rounded-md bg-kf-surface-muted px-1.5 py-0.5 text-[10px] font-medium text-kf-muted"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+
+              {document.tags.length > 3 && (
+                <span className="shrink-0 text-[10px] text-kf-faint">
+                  +{document.tags.length - 3}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Status */}
+      <div className="flex items-center gap-2 pl-[58px] sm:pl-0">
+        <Badge
+          tone={getDocumentStatusTone(
+            document.status,
+          )}
+        >
+          {getDocumentStatusLabel(
+            document.status,
+          )}
+        </Badge>
+      </div>
+
+      {/* Added */}
+      <p className="pl-[58px] text-xs text-kf-muted sm:pl-0">
+        <span className="sm:hidden">Added </span>
+        {formatDate(document.createdAt)}
+      </p>
     </div>
   );
 }

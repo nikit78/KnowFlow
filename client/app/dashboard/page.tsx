@@ -1,40 +1,56 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { useDashboard } from "./layout";
+import { apiFetch, ApiError } from "@/lib/api";
+import type {
+  Collection,
+  DashboardStats,
+  KnowledgeDocument,
+} from "@/lib/types";
+import {
+  formatBytes,
+  formatDate,
+  formatDocumentType,
+  getDocumentStatusLabel,
+  getDocumentStatusTone,
+  getFileExtension,
+} from "@/lib/format";
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
+import Spinner from "@/components/ui/Spinner";
+import {
+  IconDocument,
+  IconFolder,
+  IconNote,
+  IconPlus,
+  IconSpark,
+  IconStar,
+  IconUpload,
+  IconArrowRight,
+} from "@/components/icons";
 
-const API_URL = "http://localhost:5000/api";
-
-type User = {
-  _id: string;
-  name: string;
-  email: string;
-  avatar?: string;
-  role: "user" | "admin";
+type StatsResponse = {
+  success: boolean;
+  stats?: DashboardStats;
 };
 
-type DashboardStats = {
-  totalDocuments: number;
-  totalTrashDocuments: number;
-  totalStorage: number;
+type DocumentsResponse = {
+  success: boolean;
+  documents?: KnowledgeDocument[];
 };
 
-type Document = {
-  _id: string;
-  title: string;
-  originalName: string;
-  documentType: string;
-  fileSize: number;
-  status: "uploaded" | "processing" | "processed" | "failed";
-  tags: string[];
-  isFavorite: boolean;
-  createdAt: string;
+type CollectionsResponse = {
+  success: boolean;
+  collections?: Collection[];
 };
 
 export default function DashboardPage() {
   const router = useRouter();
-
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useDashboard();
 
   const [stats, setStats] = useState<DashboardStats>({
     totalDocuments: 0,
@@ -42,1234 +58,378 @@ export default function DashboardPage() {
     totalStorage: 0,
   });
 
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [documentsLoading, setDocumentsLoading] = useState(true);
-  const [documentsError, setDocumentsError] = useState("");
-
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [favoritesCount, setFavoritesCount] = useState<number | null>(null);
+  const [collectionsCount, setCollectionsCount] = useState<number | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
-
-    const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Document[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState("");
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [notificationOpen, setNotificationOpen] = useState(false);
-
-  const profileRef = useRef<HTMLDivElement | null>(null);
-  const notificationRef = useRef<HTMLDivElement | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function loadDashboard() {
+    let cancelled = false;
+
+    async function load() {
       try {
-        // ==========================
-        // Current User
-        // ==========================
+        setLoading(true);
+        setError("");
 
-        const userResponse = await fetch(`${API_URL}/auth/me`, {
-          method: "GET",
-          credentials: "include",
-        });
+        const [statsData, docsData, favoritesData, collectionsData] =
+          await Promise.all([
+            apiFetch<StatsResponse>("/documents/stats"),
+            apiFetch<DocumentsResponse>("/documents?page=1&limit=5"),
+            apiFetch<DocumentsResponse>("/documents/favorites").catch(
+              () => null,
+            ),
+            apiFetch<CollectionsResponse>("/collections").catch(() => null),
+          ]);
 
-        if (!userResponse.ok) {
-          router.replace("/auth/login");
-          return;
-        }
+        if (cancelled) return;
 
-        const userData = await userResponse.json();
-
-        if (!userData.success || !userData.user) {
-          router.replace("/auth/login");
-          return;
-        }
-
-        setUser(userData.user);
-
-        // ==========================
-        // Document Statistics
-        // ==========================
-
-        const statsResponse = await fetch(`${API_URL}/documents/stats`, {
-          method: "GET",
-          credentials: "include",
-        });
-
-        const statsData = await statsResponse.json();
-
-        if (statsResponse.ok && statsData.success) {
+        if (statsData.success && statsData.stats) {
           setStats({
-            totalDocuments: statsData.stats?.totalDocuments ?? 0,
-            totalTrashDocuments:
-              statsData.stats?.totalTrashDocuments ?? 0,
-            totalStorage: statsData.stats?.totalStorage ?? 0,
+            totalDocuments: statsData.stats.totalDocuments ?? 0,
+            totalTrashDocuments: statsData.stats.totalTrashDocuments ?? 0,
+            totalStorage: statsData.stats.totalStorage ?? 0,
           });
         }
 
-        // ==========================
-        // Recent Documents
-        // ==========================
+        setDocuments(docsData.documents ?? []);
 
-        try {
-          setDocumentsLoading(true);
-          setDocumentsError("");
-
-          const documentsResponse = await fetch(
-            `${API_URL}/documents?page=1&limit=5`,
-            {
-              method: "GET",
-              credentials: "include",
-            }
-          );
-
-          const documentsData = await documentsResponse.json();
-
-          if (!documentsResponse.ok || !documentsData.success) {
-            throw new Error(
-              documentsData.message || "Unable to load documents"
-            );
-          }
-
-          setDocuments(documentsData.documents ?? []);
-        } catch (error) {
-          console.error("Documents loading error:", error);
-          setDocumentsError("Unable to load your recent documents.");
-        } finally {
-          setDocumentsLoading(false);
+        if (favoritesData) {
+          setFavoritesCount(favoritesData.documents?.length ?? 0);
         }
-      } catch (error) {
-        console.error("Dashboard loading error:", error);
-        router.replace("/auth/login");
+
+        if (collectionsData) {
+          setCollectionsCount(collectionsData.collections?.length ?? 0);
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          router.replace("/auth/login");
+          return;
+        }
+
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load your workspace.",
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
-    loadDashboard();
-  }, [router]);
-
-  // ==========================
-  // Helpers
-  // ==========================
-
-  const formatStorage = (bytes: number) => {
-    if (bytes === 0) {
-      return "0 B";
-    }
-
-    const units = ["B", "KB", "MB", "GB"];
-
-    const index = Math.min(
-      Math.floor(Math.log(bytes) / Math.log(1024)),
-      units.length - 1
-    );
-
-    return `${(bytes / Math.pow(1024, index)).toFixed(
-      index === 0 ? 0 : 1
-    )} ${units[index]}`;
-  };
-
-  const formatDocumentType = (type: string) => {
-    return type
-      .split("-")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  };
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  const getFileExtension = (fileName: string) => {
-    const parts = fileName.split(".");
-    return parts.length > 1 ? parts.pop()?.toUpperCase() : "FILE";
-  };
-
-  const getStatusStyles = (status: Document["status"]) => {
-    switch (status) {
-      case "processed":
-        return "border-emerald-400/10 bg-emerald-400/[0.06] text-emerald-300";
-
-      case "processing":
-        return "border-amber-400/10 bg-amber-400/[0.06] text-amber-300";
-
-      case "failed":
-        return "border-red-400/10 bg-red-400/[0.06] text-red-300";
-
-      default:
-        return "border-white/10 bg-white/[0.04] text-zinc-400";
-    }
-  };
-
-  const getStatusLabel = (status: Document["status"]) => {
-    switch (status) {
-      case "processed":
-        return "Processed";
-      case "processing":
-        return "Processing";
-      case "failed":
-        return "Failed";
-      default:
-        return "Uploaded";
-    }
-  };
-
-    const handleLogout = async () => {
-    try {
-      await fetch(`${API_URL}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch (error) {
-      console.error("Logout error:", error);
-    } finally {
-      router.replace("/auth/login");
-    }
-  };
-
-  useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-
-      if (profileRef.current && !profileRef.current.contains(target)) {
-        setProfileOpen(false);
-      }
-
-      if (
-        notificationRef.current &&
-        !notificationRef.current.contains(target)
-      ) {
-        setNotificationOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setProfileOpen(false);
-        setNotificationOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
+    void load();
 
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
+      cancelled = true;
     };
-  }, []);
+  }, [router]);
 
-  const handleSearch = async () => {
-    const query = searchQuery.trim();
+  const firstName = user.name.split(" ")[0] || user.name;
 
-    if (!query) {
-      setSearchResults([]);
-      setSearchError("");
-      return;
-    }
-
-    try {
-      setSearchLoading(true);
-      setSearchError("");
-
-      const response = await fetch(
-        `${API_URL}/documents/search?q=${encodeURIComponent(query)}`,
-        {
-          method: "GET",
-          credentials: "include",
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.replace("/auth/login");
-        return;
-      }
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Search failed");
-      }
-
-      setSearchResults(data.documents ?? []);
-    } catch (error) {
-      console.error("Search error:", error);
-      setSearchResults([]);
-      setSearchError(
-        error instanceof Error
-          ? error.message
-          : "Unable to search documents."
-      );
-    } finally {
-      setSearchLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#09090B] text-zinc-100">
-        <div className="flex items-center gap-3 text-sm text-zinc-500">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
-          Loading your workspace...
-        </div>
-      </main>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
-
-  const firstName = user.name.split(" ")[0];
+  const quickActions = [
+    {
+      href: "/dashboard/documents/upload",
+      title: "Upload document",
+      description: "Add research, notes, or reports to your workspace.",
+      icon: IconUpload,
+    },
+    {
+      href: "/dashboard/collections",
+      title: "New collection",
+      description: "Group related documents into a focused space.",
+      icon: IconFolder,
+    },
+    {
+      href: "/dashboard/notes",
+      title: "Write a note",
+      description: "Capture ideas alongside your knowledge base.",
+      icon: IconNote,
+    },
+    {
+      href: "/dashboard/ask",
+      title: "Ask Knowledge",
+      description: "Get answers grounded in your uploaded documents.",
+      icon: IconSpark,
+    },
+  ];
 
   return (
-    <main className="min-h-screen bg-[#09090B] text-zinc-100">
-      <div className="flex min-h-screen">
-        {/* Sidebar */}
-        <aside className="hidden w-64 shrink-0 border-r border-white/5 bg-[#0C0C0F] lg:flex lg:flex-col">
-          <div className="flex h-20 items-center border-b border-white/5 px-6">
-            <button
-              onClick={() => router.push("/")}
-              className="text-xl font-semibold tracking-tight"
-            >
-              Know<span className="text-blue-400">Flow</span>
-            </button>
+    <div className="mx-auto max-w-6xl space-y-8">
+      {/* Header */}
+      <section className="relative overflow-hidden rounded-3xl border border-kf-border bg-kf-surface px-6 py-7 sm:px-8 sm:py-8">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-kf-accent-soft/60 blur-3xl"
+        />
+
+        <div className="relative">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kf-accent">
+            Your workspace
+          </p>
+
+          <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-kf-ink sm:text-4xl">
+            Welcome back, {firstName}
+          </h1>
+
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-kf-muted sm:text-[15px]">
+            Everything you need to store, organize, search, and understand your
+            knowledge in one place.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button href="/dashboard/documents/upload" size="sm">
+              <IconUpload size={15} />
+              Upload document
+            </Button>
+
+            <Button href="/dashboard/ask" variant="secondary" size="sm">
+              <IconSpark size={15} />
+              Ask Knowledge
+            </Button>
           </div>
+        </div>
+      </section>
 
-          <div className="flex-1 px-4 py-6">
-            <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
-              Workspace
-            </p>
+      {/* Error */}
+      {error && (
+        <div
+          className="rounded-xl border border-kf-error/20 bg-kf-error-soft px-4 py-3.5 text-sm leading-6 text-kf-error"
+          role="alert"
+        >
+          {error}
+        </div>
+      )}
 
-            <nav className="mt-3 space-y-1">
-              <button className="flex w-full items-center gap-3 rounded-lg bg-white/[0.06] px-3 py-2.5 text-sm font-medium text-zinc-100">
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <rect x="3" y="3" width="7" height="7" rx="1" />
-                  <rect x="14" y="3" width="7" height="7" rx="1" />
-                  <rect x="3" y="14" width="7" height="7" rx="1" />
-                  <rect x="14" y="14" width="7" height="7" rx="1" />
-                </svg>
-                Overview
-              </button>
-
-              <button
-                onClick={() => router.push("/dashboard/documents")}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
-              >
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v9A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-11Z" />
-                </svg>
-                Documents
-              </button>
-
-              <button
-                type="button"
-                onClick={() => router.push("/dashboard/collections")}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
-              >
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <circle cx="7" cy="7" r="2.5" />
-                  <circle cx="17" cy="7" r="2.5" />
-                  <circle cx="7" cy="17" r="2.5" />
-                  <path d="M9 7h5.5M7 9.5v5M9 17h5.5M17 9.5v5" />
-                </svg>
-                Collections
-              </button>
-
-              <button
-                type="button"
-                onClick={() => router.push("/dashboard/notes")}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
-              >
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <path d="M5 4.5h14A1.5 1.5 0 0 1 20.5 6v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5Z" />
-                  <path d="M8 8h8M8 12h6M8 16h4" />
-                </svg>
-                Notes
-              </button>
-            </nav>
-
-            <p className="mt-9 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
-              Knowledge
-            </p>
-
-            <nav className="mt-3 space-y-1">
-              <button
-                type="button"
-                onClick={() => router.push("/dashboard/ask")}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-200">
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <path d="M12 3v18M3 12h18" />
-                  <circle cx="12" cy="12" r="7.5" />
-                </svg>
-                Ask Knowledge
-              </button>
-
-              <button
-                type="button"
-                onClick={() => router.push("/dashboard/favorites")}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-200">
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <path d="m12 3 2.6 5.4L20 11l-5.4 2.6L12 19l-2.6-5.4L4 11l5.4-2.6L12 3Z" />
-                </svg>
-                Favorites
-              </button>
-
-              <button
-                type="button"
-                onClick={() => router.push("/dashboard/trash")}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
-              >
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 18.5v-13Z" />
-                  <path d="M8 8h8M8 12h6" />
-                </svg>
-                Trash
-              </button>
-            </nav>
-          </div>
-
-          {/* User */}
-          <div className="border-t border-white/5 p-4">
-            <div className="flex items-center gap-3 rounded-xl px-2 py-2">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-sm font-semibold text-blue-300">
-                {firstName.charAt(0).toUpperCase()}
-              </div>
-
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-zinc-200">
-                  {user.name}
+      {loading ? (
+        <div className="kf-card flex min-h-[280px] items-center justify-center">
+          <Spinner label="Loading workspace..." />
+        </div>
+      ) : (
+        <>
+          {/* Stats */}
+          <section>
+            <div className="mb-4 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-kf-faint">
+                  Overview
                 </p>
-
-                <p className="truncate text-xs text-zinc-600">
-                  {user.email}
-                </p>
+                <h2 className="mt-1 text-lg font-semibold tracking-tight text-kf-ink">
+                  Workspace at a glance
+                </h2>
               </div>
             </div>
-          </div>
-        </aside>
 
-        {/* Main */}
-        <section className="min-w-0 flex-1">
-          {/* Top bar */}
-          <header className="flex h-20 items-center justify-between border-b border-white/5 px-6 sm:px-8">
-            <div>
-              <p className="text-xs font-medium text-zinc-600">
-                Personal workspace
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                label="Documents"
+                value={String(stats.totalDocuments)}
+                hint="Active in workspace"
+                icon={<IconDocument size={18} />}
+              />
+
+              <StatCard
+                label="Storage"
+                value={formatBytes(stats.totalStorage)}
+                hint="Active files"
+                icon={<IconUpload size={18} />}
+              />
+
+              <StatCard
+                label="Favorites"
+                value={
+                  favoritesCount === null ? "—" : String(favoritesCount)
+                }
+                hint="Saved documents"
+                icon={<IconStar size={18} />}
+              />
+
+              <StatCard
+                label="Collections"
+                value={
+                  collectionsCount === null
+                    ? "—"
+                    : String(collectionsCount)
+                }
+                hint={
+                  stats.totalTrashDocuments > 0
+                    ? `${stats.totalTrashDocuments} in trash`
+                    : "Organized spaces"
+                }
+                icon={<IconFolder size={18} />}
+              />
+            </div>
+          </section>
+
+          {/* Quick actions */}
+          <section>
+            <div className="mb-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-kf-faint">
+                Quick actions
               </p>
-
-              <h2 className="mt-0.5 text-sm font-medium text-zinc-200">
-                Overview
+              <h2 className="mt-1 text-lg font-semibold tracking-tight text-kf-ink">
+                What would you like to do?
               </h2>
             </div>
 
-            <div className="flex items-center gap-3">
-             <button
-  type="button"
-  onClick={() => {
-    setSearchOpen(true);
-    setSearchError("");
-  }}
-  className="hidden h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 text-xs text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-300 sm:flex"
->
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <circle cx="11" cy="11" r="6.5" />
-                  <path d="m16 16 4.5 4.5" />
-                </svg>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {quickActions.map((action) => {
+                const Icon = action.icon;
 
-                Search
-
-                <span className="ml-2 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-700">
-                  /
-                </span>
-              </button>
-
-              <div ref={notificationRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNotificationOpen((open) => !open);
-                    setProfileOpen(false);
-                  }}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
-                    notificationOpen
-                      ? "border-white/15 bg-white/[0.06] text-zinc-200"
-                      : "border-white/10 text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200"
-                  }`}
-                  aria-label="Notifications"
-                  aria-expanded={notificationOpen}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
+                return (
+                  <Link
+                    key={action.href}
+                    href={action.href}
+                    className="group rounded-2xl border border-kf-border bg-kf-surface p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-kf-border-strong hover:shadow-[0_12px_32px_rgba(15,23,42,0.07)] focus:outline-none focus:ring-2 focus:ring-kf-accent/30"
                   >
-                    <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" />
-                  </svg>
-                </button>
-
-                {notificationOpen && (
-                  <div className="absolute right-0 top-12 z-50 w-72 overflow-hidden rounded-2xl border border-white/10 bg-[#0C0C0F] shadow-2xl shadow-black/40">
-                    <div className="border-b border-white/5 px-4 py-4">
-                      <p className="text-sm font-semibold text-zinc-200">
-                        Notifications
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-zinc-600">
-                        Workspace updates and activity will appear here.
-                      </p>
-                    </div>
-
-                    <div className="px-4 py-5">
-                      <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-5 text-center">
-                        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] text-zinc-500">
-                          <svg
-                            width="17"
-                            height="17"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.7"
-                          >
-                            <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" />
-                          </svg>
-                        </div>
-                        <p className="mt-3 text-xs font-medium text-zinc-300">
-                          No new notifications
-                        </p>
-                        <p className="mt-1 text-[11px] leading-5 text-zinc-600">
-                          You&apos;re all caught up.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div ref={profileRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProfileOpen((open) => !open);
-                    setNotificationOpen(false);
-                  }}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
-                    profileOpen
-                      ? "bg-blue-500/25 text-blue-200 ring-2 ring-blue-400/10"
-                      : "bg-blue-500/15 text-blue-300 hover:bg-blue-500/25"
-                  }`}
-                  aria-label="Open profile menu"
-                  aria-expanded={profileOpen}
-                >
-                  {firstName.charAt(0).toUpperCase()}
-                </button>
-
-                {profileOpen && (
-                  <div className="absolute right-0 top-12 z-50 w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#0C0C0F] shadow-2xl shadow-black/40">
-                    <div className="border-b border-white/5 px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-sm font-semibold text-blue-300">
-                          {firstName.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-zinc-200">
-                            {user.name}
-                          </p>
-                          <p className="truncate text-xs text-zinc-600">
-                            {user.email}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-2">
-                      <div className="rounded-xl px-3 py-2.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-700">
-                          Account
-                        </p>
-                        <p className="mt-1 text-xs text-zinc-500">
-                          Personal workspace
-                        </p>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-kf-accent-soft text-kf-accent-ink transition-transform duration-200 group-hover:scale-105">
+                        <Icon size={19} />
                       </div>
 
-                      <div className="my-1 border-t border-white/5" />
-
-                      <button
-                        type="button"
-                        onClick={handleLogout}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs text-red-300 transition-colors hover:bg-red-400/[0.06]"
-                      >
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.7"
-                        >
-                          <path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10" />
-                          <path d="M13 8l4 4-4 4M17 12H9" />
-                        </svg>
-                        Logout
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </header>
-
-          {/* Content */}
-          <div className="mx-auto max-w-7xl px-6 py-8 sm:px-8 lg:px-10">
-            <div className="mb-8">
-              <p className="text-sm text-zinc-500">Good to see you back,</p>
-
-              <h1 className="mt-1 text-3xl font-semibold tracking-tight text-zinc-100">
-                {firstName}.
-              </h1>
-
-              <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-600">
-                Your knowledge workspace is ready. Capture something new or
-                continue exploring what you have already built.
-              </p>
-            </div>
-
-            {/* Stats */}
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
-                <p className="text-xs font-medium text-zinc-600">
-                  Documents
-                </p>
-
-                <div className="mt-3 flex items-end justify-between gap-4">
-                  <p className="text-2xl font-semibold tracking-tight text-zinc-100">
-                    {stats.totalDocuments}
-                  </p>
-
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-300">
-                    <svg
-                      width="17"
-                      height="17"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <path d="M5 4.5h9l5 5v10H5a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 5 4.5Z" />
-                      <path d="M14 4.5V10h5M8 14h8M8 17h5" />
-                    </svg>
-                  </div>
-                </div>
-
-                <p className="mt-2 text-xs text-zinc-700">
-                  Active documents
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
-                <p className="text-xs font-medium text-zinc-600">
-                  Storage used
-                </p>
-
-                <div className="mt-3 flex items-end justify-between gap-4">
-                  <p className="text-2xl font-semibold tracking-tight text-zinc-100">
-                    {formatStorage(stats.totalStorage)}
-                  </p>
-
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.05] text-zinc-300">
-                    <svg
-                      width="17"
-                      height="17"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-9Z" />
-                      <path d="M8 12h8" />
-                    </svg>
-                  </div>
-                </div>
-
-                <p className="mt-2 text-xs text-zinc-700">
-                  Active workspace files
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
-                <p className="text-xs font-medium text-zinc-600">
-                  In trash
-                </p>
-
-                <div className="mt-3 flex items-end justify-between gap-4">
-                  <p className="text-2xl font-semibold tracking-tight text-zinc-100">
-                    {stats.totalTrashDocuments}
-                  </p>
-
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.05] text-zinc-300">
-                    <svg
-                      width="17"
-                      height="17"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <path d="M5 7h14M9 7V4.5h6V7M7 7l1 13h8l1-13M10 11v5M14 11v5" />
-                    </svg>
-                  </div>
-                </div>
-
-                <p className="mt-2 text-xs text-zinc-700">
-                  Deleted documents
-                </p>
-              </div>
-            </div>
-
-            {/* Quick actions */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <button
-                onClick={() => router.push("/dashboard/documents")}
-                className="group rounded-2xl border border-blue-400/10 bg-blue-500/[0.06] p-5 text-left transition-colors hover:border-blue-400/20 hover:bg-blue-500/[0.09]"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-300">
-                  <svg
-                    width="19"
-                    height="19"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                </div>
-
-                <h3 className="mt-4 text-sm font-semibold text-zinc-200">
-                  Add a document
-                </h3>
-
-                <p className="mt-1 text-xs leading-5 text-zinc-600">
-                  Upload research, notes, reports, books, or other useful
-                  knowledge.
-                </p>
-              </button>
-
-             <button
-  type="button"
-  onClick={() => router.push("/dashboard/ask")}
-  className="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-left transition-colors hover:border-white/15 hover:bg-white/[0.04]"
->
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.05] text-zinc-300">
-                  <svg
-                    width="19"
-                    height="19"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <path d="M11 4h8v8M20 4l-9 9" />
-                    <path d="M19 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4" />
-                  </svg>
-                </div>
-
-                <h3 className="mt-4 text-sm font-semibold text-zinc-200">
-                  Ask your knowledge
-                </h3>
-
-                <p className="mt-1 text-xs leading-5 text-zinc-600">
-                  Search across your workspace and get answers grounded in
-                  your documents.
-                </p>
-              </button>
-            </div>
-
-            {/* Workspace */}
-            <div className="mt-6 overflow-hidden rounded-2xl border border-white/5 bg-white/[0.015]">
-              <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
-                <div>
-                  <h2 className="text-sm font-semibold text-zinc-200">
-                    Your workspace
-                  </h2>
-
-                  <p className="mt-1 text-xs text-zinc-600">
-                    Your most recent documents and activity.
-                  </p>
-                </div>
-
-                {documents.length > 0 && (
-                  <button
-                    onClick={() => router.push("/dashboard/documents")}
-                    className="text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-200"
-                  >
-                    View all
-                  </button>
-                )}
-              </div>
-
-              {/* Loading */}
-              {documentsLoading && (
-                <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
-                  <div className="flex items-center gap-3 text-sm text-zinc-500">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
-                    Loading your documents...
-                  </div>
-                </div>
-              )}
-
-              {/* Error */}
-              {!documentsLoading && documentsError && (
-                <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-red-400/10 bg-red-400/[0.05] text-red-300">
-                    <svg
-                      width="21"
-                      height="21"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                    >
-                      <path d="M12 8v5M12 16.5v.5" />
-                      <path d="M10.2 4.5 3.8 17a2 2 0 0 0 1.8 2.9h12.8a2 2 0 0 0 1.8-2.9L13.8 4.5a2 2 0 0 0-3.6 0Z" />
-                    </svg>
-                  </div>
-
-                  <h3 className="mt-4 text-sm font-medium text-zinc-300">
-                    Could not load documents
-                  </h3>
-
-                  <p className="mt-1 max-w-sm text-xs leading-5 text-zinc-600">
-                    {documentsError}
-                  </p>
-
-                  <button
-                    onClick={() => window.location.reload()}
-                    className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/[0.06]"
-                  >
-                    Try again
-                  </button>
-                </div>
-              )}
-
-              {/* Empty state */}
-              {!documentsLoading &&
-                !documentsError &&
-                documents.length === 0 && (
-                  <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-zinc-600">
-                      <svg
-                        width="21"
-                        height="21"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                      >
-                        <path d="M5 4.5h9l5 5v10H5a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 5 4.5Z" />
-                        <path d="M14 4.5V10h5" />
-                      </svg>
+                      <IconArrowRight
+                        size={15}
+                        className="mt-1 text-kf-faint transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-kf-accent"
+                      />
                     </div>
 
-                    <h3 className="mt-4 text-sm font-medium text-zinc-300">
-                      Nothing here yet
+                    <h3 className="mt-5 text-sm font-semibold text-kf-ink">
+                      {action.title}
                     </h3>
 
-                    <p className="mt-1 max-w-sm text-xs leading-5 text-zinc-600">
-                      Start by adding your first document. Once your workspace
-                      has content, your recent documents will appear here.
+                    <p className="mt-1.5 text-xs leading-5 text-kf-muted">
+                      {action.description}
                     </p>
-
-                    <button
-                      onClick={() => router.push("/dashboard/documents")}
-                      className="mt-5 rounded-lg bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-400"
-                    >
-                      Add your first document
-                    </button>
-                  </div>
-                )}
-
-              {/* Documents */}
-              {!documentsLoading &&
-                !documentsError &&
-                documents.length > 0 && (
-                  <div className="divide-y divide-white/5">
-                    {documents.map((document) => (
-                      <button
-                        key={document._id}
-                        type="button"
-                        onClick={() =>
-                          router.push("/dashboard/documents")
-                        }
-                        className="group flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-white/[0.025]"
-                      >
-                        {/* File icon */}
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-[10px] font-bold tracking-wide text-zinc-500">
-                          {getFileExtension(document.originalName)}
-                        </div>
-
-                        {/* Main document info */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <p className="truncate text-sm font-medium text-zinc-200">
-                              {document.title}
-                            </p>
-
-                            {document.isFavorite && (
-                              <svg
-                                width="13"
-                                height="13"
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                                className="shrink-0 text-amber-300"
-                              >
-                                <path d="m12 3 2.6 5.3 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.9L12 3Z" />
-                              </svg>
-                            )}
-                          </div>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-zinc-600">
-                            <span>
-                              {formatDocumentType(document.documentType)}
-                            </span>
-
-                            <span className="text-zinc-800">•</span>
-
-                            <span>{formatStorage(document.fileSize)}</span>
-
-                            <span className="text-zinc-800">•</span>
-
-                            <span>{formatDate(document.createdAt)}</span>
-                          </div>
-
-                          {document.tags.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {document.tags.slice(0, 3).map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="rounded-md border border-white/5 bg-white/[0.025] px-1.5 py-0.5 text-[10px] text-zinc-600"
-                                >
-                                  #{tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Status */}
-                        <div
-                          className={`hidden shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium sm:block ${getStatusStyles(
-                            document.status
-                          )}`}
-                        >
-                          {getStatusLabel(document.status)}
-                        </div>
-
-                        {/* Arrow */}
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.7"
-                          className="shrink-0 text-zinc-700 transition-colors group-hover:text-zinc-400"
-                        >
-                          <path d="m9 18 6-6-6-6" />
-                        </svg>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  </Link>
+                );
+              })}
             </div>
-          </div>
-        </section>
-      </div>
-            {/* Global Search Modal */}
-      {searchOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-[12vh] backdrop-blur-sm"
-          onMouseDown={() => setSearchOpen(false)}
-        >
-          <div
-            className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-[#0C0C0F] shadow-2xl"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            {/* Search Header */}
-            <div className="border-b border-white/5 p-4">
-              <div className="flex items-center gap-3">
-                <svg
-                  width="19"
-                  height="19"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  className="shrink-0 text-zinc-500"
-                >
-                  <circle cx="11" cy="11" r="6.5" />
-                  <path d="m16 16 4.5 4.5" />
-                </svg>
+          </section>
 
-                <input
-                  autoFocus
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      handleSearch();
-                    }
-
-                    if (event.key === "Escape") {
-                      setSearchOpen(false);
-                    }
-                  }}
-                  placeholder="Search your documents..."
-                  className="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => setSearchOpen(false)}
-                  className="rounded-lg border border-white/10 px-2 py-1 text-[10px] text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300"
-                >
-                  ESC
-                </button>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between">
-                <p className="text-[11px] text-zinc-600">
-                  Search by document title, filename, tags, or extracted text.
+          {/* Recent documents */}
+          <section className="overflow-hidden rounded-2xl border border-kf-border bg-kf-surface">
+            <div className="flex flex-col gap-3 border-b border-kf-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-kf-faint">
+                  Your library
                 </p>
 
-                <button
-                  type="button"
-                  onClick={handleSearch}
-                  disabled={searchLoading}
-                  className="rounded-lg bg-blue-500 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {searchLoading ? "Searching..." : "Search"}
-                </button>
+                <h2 className="mt-1 text-lg font-semibold tracking-tight text-kf-ink">
+                  Recent documents
+                </h2>
+
+                <p className="mt-1 text-xs text-kf-muted">
+                  Your latest uploads and updates
+                </p>
               </div>
+
+              {documents.length > 0 && (
+                <Button
+                  href="/dashboard/documents"
+                  variant="ghost"
+                  size="sm"
+                >
+                  View all
+                  <IconArrowRight size={14} />
+                </Button>
+              )}
             </div>
 
-            {/* Search Results */}
-            <div className="max-h-[55vh] overflow-y-auto">
-              {searchError && (
-                <div className="m-4 rounded-xl border border-red-400/10 bg-red-400/[0.05] px-4 py-3 text-xs text-red-300">
-                  {searchError}
-                </div>
-              )}
-
-              {!searchLoading &&
-                !searchError &&
-                searchQuery.trim() &&
-                searchResults.length === 0 && (
-                  <div className="px-6 py-12 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-zinc-600">
-                      <svg
-                        width="21"
-                        height="21"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                      >
-                        <circle cx="11" cy="11" r="6.5" />
-                        <path d="m16 16 4.5 4.5" />
-                      </svg>
+            {documents.length === 0 ? (
+              <div className="p-6 sm:p-8">
+                <EmptyState
+                  icon={<IconPlus size={20} />}
+                  title="Your knowledge library is empty"
+                  description="Upload your first document to start building your personal knowledge workspace."
+                  action={
+                    <Button href="/dashboard/documents/upload">
+                      <IconUpload size={16} />
+                      Upload document
+                    </Button>
+                  }
+                />
+              </div>
+            ) : (
+              <div className="divide-y divide-kf-border">
+                {documents.map((doc) => (
+                  <Link
+                    key={doc._id}
+                    href={`/dashboard/documents/${doc._id}`}
+                    className="group flex items-center gap-3 px-5 py-4 transition-colors hover:bg-kf-surface-muted sm:gap-4 sm:px-6"
+                  >
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-kf-border bg-kf-surface-muted text-[10px] font-bold uppercase tracking-wide text-kf-accent-ink">
+                      {getFileExtension(doc.originalName)}
                     </div>
 
-                    <p className="mt-4 text-sm font-medium text-zinc-300">
-                      No documents found
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-kf-ink">
+                          {doc.title}
+                        </p>
 
-                    <p className="mt-1 text-xs text-zinc-600">
-                      Try another title, filename, tag, or keyword.
-                    </p>
-                  </div>
-                )}
-
-              {searchLoading && (
-                <div className="px-6 py-12 text-center">
-                  <div className="flex items-center justify-center gap-3 text-sm text-zinc-500">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
-                    Searching your knowledge...
-                  </div>
-                </div>
-              )}
-
-              {!searchLoading && searchResults.length > 0 && (
-                <div className="divide-y divide-white/5">
-                  {searchResults.map((document) => (
-                    <button
-                      key={document._id}
-                      type="button"
-                      onClick={() => {
-                        setSearchOpen(false);
-                        router.push(
-                          `/dashboard/documents/${document._id}`
-                        );
-                      }}
-                      className="group flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-white/[0.03]"
-                    >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-[10px] font-bold tracking-wide text-zinc-500">
-                        {getFileExtension(document.originalName)}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="truncate text-sm font-medium text-zinc-200">
-                            {document.title}
-                          </p>
-
-                          {document.isFavorite && (
-                            <span className="shrink-0 text-xs text-amber-300">
-                              ★
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-zinc-600">
-                          <span className="truncate">
-                            {document.originalName}
-                          </span>
-
-                          <span>•</span>
-
-                          <span>
-                            {formatDocumentType(document.documentType)}
-                          </span>
-
-                          <span>•</span>
-
-                          <span>
-                            {formatStorage(document.fileSize)}
-                          </span>
-                        </div>
-
-                        {document.tags.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {document.tags.slice(0, 3).map((tag) => (
-                              <span
-                                key={tag}
-                                className="rounded-md border border-white/5 bg-white/[0.025] px-1.5 py-0.5 text-[10px] text-zinc-600"
-                              >
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
+                        {doc.isFavorite && (
+                          <IconStar
+                            size={14}
+                            className="shrink-0 text-kf-favorite"
+                          />
                         )}
                       </div>
 
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
-                        className="shrink-0 text-zinc-700 transition-colors group-hover:text-zinc-400"
-                      >
-                        <path d="m9 18 6-6-6-6" />
-                      </svg>
-                    </button>
-                  ))}
-                </div>
-              )}
+                      <p className="mt-1 truncate text-xs text-kf-muted">
+                        {formatDocumentType(doc.documentType)} ·{" "}
+                        {formatBytes(doc.fileSize)} ·{" "}
+                        {formatDate(doc.createdAt)}
+                      </p>
+                    </div>
 
-              {!searchQuery.trim() && (
-                <div className="px-6 py-10">
-                  <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-700">
-                    Quick search
-                  </p>
+                    <Badge tone={getDocumentStatusTone(doc.status)}>
+                      {getDocumentStatusLabel(doc.status)}
+                    </Badge>
 
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {[
-                      "KnowFlow",
-                      "research",
-                      "lecture notes",
-                      "machine learning",
-                    ].map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() => {
-                          setSearchQuery(suggestion);
-                        }}
-                        className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-left text-xs text-zinc-500 transition hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-300"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+                    <IconArrowRight
+                      size={15}
+                      className="hidden shrink-0 text-kf-faint transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-kf-accent sm:block"
+                    />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
       )}
-    </main>
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  hint,
+  icon,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: ReactNode;
+}) {
+  return (
+    <div className="group rounded-2xl border border-kf-border bg-kf-surface p-5 transition-all duration-200 hover:border-kf-border-strong hover:shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-semibold text-kf-muted">{label}</p>
+
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-kf-accent-soft text-kf-accent-ink transition-transform duration-200 group-hover:scale-105">
+          {icon}
+        </span>
+      </div>
+
+      <p className="mt-4 text-2xl font-bold tracking-[-0.025em] text-kf-ink">
+        {value}
+      </p>
+
+      <p className="mt-1 text-xs text-kf-faint">{hint}</p>
+    </div>
   );
 }
