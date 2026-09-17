@@ -1,60 +1,101 @@
+"use client";
+
 import Link from "next/link";
+import { FormEvent, useState } from "react";
+import AuthShell from "@/components/auth/AuthShell";
+import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
+import { IconArrowLeft, IconArrowRight, IconMail } from "@/components/icons";
 
 export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitted(true);
+  }
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#09090B] px-6">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#111113] p-8 shadow-2xl">
-        <div className="mb-8 text-center">
-          <Link
-            href="/"
-            className="text-2xl font-semibold tracking-tight text-zinc-100"
-          >
-            Know<span className="text-blue-400">Flow</span>
-          </Link>
+    <AuthShell
+      eyebrow="Account recovery"
+      title="Reset access when you need it."
+      description="Password reset email delivery is not connected yet. Use your existing login method, or contact support if you are locked out."
+    >
+      <div className="mt-8 lg:mt-0">
+        {/* Heading */}
+        <div>
+          <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl border border-kf-border bg-kf-surface-muted">
+            <IconMail size={17} className="text-kf-accent" />
+          </div>
 
-          <h1 className="mt-8 text-3xl font-semibold text-zinc-100">
+          <h2 className="text-2xl font-bold tracking-tight text-kf-ink">
             Forgot your password?
-          </h1>
+          </h2>
 
-          <p className="mt-3 text-sm leading-6 text-zinc-500">
-            Enter your email address and we&apos;ll send you a password reset link.
+          <p className="mt-2 text-sm leading-6 text-kf-muted">
+            Enter your email to see the available recovery options.
           </p>
         </div>
 
-        <form className="space-y-6">
-          <div>
-            <label
-              htmlFor="email"
-              className="mb-2 block text-sm font-medium text-zinc-300"
-            >
-              Email address
-            </label>
+        {submitted ? (
+          /* Recovery state */
+          <div className="mt-7 rounded-2xl border border-kf-border bg-kf-surface p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-kf-accent/20 bg-kf-accent-soft">
+              <IconMail size={17} className="text-kf-accent" />
+            </div>
 
-            <input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-blue-400/40 focus:ring-2 focus:ring-blue-400/10"
-            />
+            <h3 className="mt-5 text-base font-semibold text-kf-ink">
+              Recovery email is not enabled yet
+            </h3>
+
+            <p className="mt-2 text-sm leading-6 text-kf-muted">
+              KnowFlow currently supports email/password and Google sign-in.
+              If you registered with Google, continue with Google on the login
+              page. Email reset will be added when the mail provider is
+              configured.
+            </p>
+
+            <div className="mt-6">
+              <Button href="/auth/login">
+                Back to login
+                <IconArrowRight size={15} />
+              </Button>
+            </div>
           </div>
+        ) : (
+          /* Form */
+          <form className="mt-7 space-y-5" onSubmit={handleSubmit}>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              label="Email address"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+            />
 
-          <button
-            type="submit"
-            className="h-11 w-full rounded-xl bg-blue-500 text-sm font-semibold text-white transition hover:bg-blue-400"
-          >
-            Send Reset Link
-          </button>
-        </form>
+            <Button type="submit" className="w-full">
+              Continue
+              <IconArrowRight size={15} />
+            </Button>
+          </form>
+        )}
 
+        {/* Back link */}
         <div className="mt-8 text-center">
           <Link
             href="/auth/login"
-            className="text-sm text-blue-400 transition hover:text-blue-300"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-kf-muted transition-colors hover:text-kf-ink"
           >
-            ← Back to Login
+            <IconArrowLeft size={14} />
+            Back to login
           </Link>
         </div>
       </div>
-    </main>
+    </AuthShell>
   );
 }

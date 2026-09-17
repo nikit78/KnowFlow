@@ -1,84 +1,142 @@
 import Link from "next/link";
 import Container from "./Container";
+import {
+  IconArrowRight,
+  IconDocument,
+  IconFolder,
+  IconSpark,
+} from "@/components/icons";
 
 const footerLinks = {
   Product: [
-    { label: "Features", href: "#features", type: "anchor" },
-    { label: "Pricing", href: "#pricing", type: "anchor" },
-    { label: "About", href: "#about", type: "anchor" },
+    { label: "How it works", href: "#how-it-works" },
+    { label: "Features", href: "#features" },
+    { label: "Ask Knowledge", href: "#ask-ai" },
   ],
   Account: [
-    { label: "Log in", href: "/auth/login", type: "link" },
-    { label: "Create account", href: "/auth/register", type: "link" },
+    { label: "Log in", href: "/auth/login" },
+    { label: "Create account", href: "/auth/register" },
   ],
-  Legal: [
-    { label: "Privacy", href: "#", type: "anchor" },
-    { label: "Terms", href: "#", type: "anchor" },
+  Workspace: [
+    {
+      label: "Documents",
+      href: "/dashboard/documents",
+      icon: IconDocument,
+    },
+    {
+      label: "Collections",
+      href: "/dashboard/collections",
+      icon: IconFolder,
+    },
+    {
+      label: "Ask Knowledge",
+      href: "/dashboard/ask",
+      icon: IconSpark,
+    },
   ],
 };
 
 export default function Footer() {
   return (
-    <footer className="border-t border-white/5 bg-[#09090B]">
+    <footer className="border-t border-kf-border bg-kf-surface">
       <Container>
-        <div className="grid gap-12 py-16 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
+        <div className="grid gap-10 py-14 md:grid-cols-[1.5fr_1fr_1fr_1fr] md:py-16">
+          {/* Brand */}
           <div className="max-w-sm">
             <Link
               href="/"
-              className="text-xl font-semibold tracking-tight text-zinc-100"
+              className="group inline-flex text-lg font-bold tracking-[-0.02em] text-kf-ink"
             >
-              Know<span className="text-blue-400">Flow</span>
+              Know
+              <span className="text-kf-accent transition-colors duration-200 group-hover:text-kf-accent-ink">
+                Flow
+              </span>
             </Link>
 
-            <p className="mt-4 text-sm leading-6 text-zinc-500">
-              A calm, connected workspace for your notes, documents, ideas,
-              and everything worth remembering.
+            <p className="mt-4 text-sm leading-6 text-kf-muted">
+              Upload documents, organize knowledge, search instantly, and ask
+              questions grounded in the information you actually stored.
             </p>
 
-            <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/5 bg-white/[0.02] px-3 py-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-
-              <span className="text-[11px] text-zinc-600">
-                All systems operational
-              </span>
-            </div>
+            <Link
+              href="/auth/register"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-kf-accent transition-colors hover:text-kf-accent-ink"
+            >
+              Start building your knowledge
+              <IconArrowRight size={14} />
+            </Link>
           </div>
 
-          {Object.entries(footerLinks).map(([title, links]) => (
-            <div key={title}>
-              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-300">
-                {title}
-              </h3>
+          {/* Product & Account */}
+          {Object.entries(footerLinks)
+            .filter(([title]) => title !== "Workspace")
+            .map(([title, links]) => (
+              <div key={title}>
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-kf-ink">
+                  {title}
+                </h3>
 
-              <ul className="mt-5 space-y-3">
-                {links.map((link) => (
-                  <li key={link.label}>
-                    {link.type === "link" ? (
+                <ul className="mt-4 space-y-2.5">
+                  {links.map((link) => (
+                    <li key={link.label}>
                       <Link
                         href={link.href}
-                        className="text-sm text-zinc-600 transition-colors hover:text-zinc-200"
+                        className="text-sm text-kf-muted transition-colors duration-200 hover:text-kf-ink"
                       >
                         {link.label}
                       </Link>
-                    ) : (
-                      <a
-                        href={link.href}
-                        className="text-sm text-zinc-600 transition-colors hover:text-zinc-200"
-                      >
-                        {link.label}
-                      </a>
-                    )}
-                  </li>
-                ))}
-              </ul>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+          {/* Workspace */}
+          <div>
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-kf-ink">
+              Workspace
+            </h3>
+
+            <div className="mt-4 space-y-2">
+              {footerLinks.Workspace.map((item) => (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className="group -mx-2 flex items-center gap-3 rounded-xl px-2 py-2 transition-colors duration-200 hover:bg-kf-surface-muted"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-kf-border bg-kf-bg">
+                    <item.icon
+                      size={13}
+                      className="text-kf-accent transition-transform duration-200 group-hover:scale-105"
+                    />
+                  </span>
+
+                  <span className="text-sm text-kf-muted transition-colors duration-200 group-hover:text-kf-ink">
+                    {item.label}
+                  </span>
+                </Link>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
 
-        <div className="flex flex-col gap-4 border-t border-white/5 py-6 text-xs text-zinc-700 sm:flex-row sm:items-center sm:justify-between">
-          <p>© 2026 KnowFlow. All rights reserved.</p>
+        {/* Bottom bar */}
+        <div className="flex flex-col gap-4 border-t border-kf-border py-5 text-xs text-kf-faint sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            © {new Date().getFullYear()} KnowFlow. All rights reserved.
+          </p>
 
-          <p>Built for better thinking.</p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>Upload</span>
+            <span aria-hidden="true">→</span>
+            <span>Organize</span>
+            <span aria-hidden="true">→</span>
+            <span>Search</span>
+            <span aria-hidden="true">→</span>
+            <span>Ask</span>
+            <span aria-hidden="true">→</span>
+            <span>Understand</span>
+          </div>
         </div>
       </Container>
     </footer>

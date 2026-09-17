@@ -22,6 +22,7 @@ export interface RagAnswerResult {
     documentTitle: string;
     originalName: string;
     chunkIndex: number;
+    text: string;
   }[];
 }
 
@@ -86,6 +87,9 @@ export const generateRagAnswer = async ({
         ? chunk.document
         : {};
 
+    const excerpt =
+      typeof chunk.text === "string" ? chunk.text.trim() : "";
+
     return {
       documentId:
         document._id?.toString() || "",
@@ -97,6 +101,10 @@ export const generateRagAnswer = async ({
         "",
       chunkIndex:
         chunk.chunkIndex,
+      text:
+        excerpt.length > 280
+          ? `${excerpt.slice(0, 280).trim()}…`
+          : excerpt,
     };
   }
 );

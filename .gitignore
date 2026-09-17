@@ -27,6 +27,7 @@ Thumbs.db
 dist/
 build/
 out/
+*.tsbuildinfo
 
 # Turbo
 .turbo/

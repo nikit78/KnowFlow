@@ -2,620 +2,426 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useDashboard } from "../layout";
+import { apiFetch, ApiError } from "@/lib/api";
+import type { KnowledgeDocument } from "@/lib/types";
+import {
+  formatBytes,
+  formatDate,
+  formatDocumentType,
+  getFileExtension,
+} from "@/lib/format";
+import Button from "@/components/ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
+import Spinner from "@/components/ui/Spinner";
+import {
+  IconArrowRight,
+  IconCheck,
+  IconDocument,
+  IconRestore,
+  IconTrash,
+} from "@/components/icons";
 
-const API_URL = "http://localhost:5000/api";
-
-type Document = {
-  _id: string;
-  title: string;
-  originalName: string;
-  documentType: string;
-  fileSize: number;
-  createdAt: string;
-  deletedAt?: string | null;
-  tags: string[];
-  status: "uploaded" | "processing" | "processed" | "failed";
+type TrashResponse = {
+  success: boolean;
+  documents?: KnowledgeDocument[];
+  message?: string;
 };
 
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function getExtension(fileName: string) {
-  const lastDot = fileName.lastIndexOf(".");
-
-  if (lastDot === -1) {
-    return "FILE";
-  }
-
-  return fileName.slice(lastDot + 1).toUpperCase();
-}
-
-function getDocumentTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    "research-paper": "Research Paper",
-    "annual-report": "Annual Report",
-    "financial-statement": "Financial Statement",
-    "lecture-notes": "Lecture Notes",
-    book: "Book",
-    other: "Other",
-  };
-
-  return labels[type] || type;
-}
-
-function formatDate(dateString?: string | null) {
-  if (!dateString) {
-    return "Unknown date";
-  }
-
-  const date = new Date(dateString);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown date";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
-}
-
 export default function TrashPage() {
+  useDashboard();
   const router = useRouter();
 
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [documentToRestore, setDocumentToRestore] =
-    useState<Document | null>(null);
-
+    useState<KnowledgeDocument | null>(null);
   const [restoring, setRestoring] = useState(false);
 
   const [documentToDelete, setDocumentToDelete] =
-  useState<Document | null>(null);
-
-const [permanentlyDeleting, setPermanentlyDeleting] =
-  useState(false);
-
-  // ==========================
-  // Load Trash
-  // ==========================
+    useState<KnowledgeDocument | null>(null);
+  const [permanentlyDeleting, setPermanentlyDeleting] = useState(false);
 
   useEffect(() => {
-    const loadTrash = async () => {
+    let cancelled = false;
+
+    async function load() {
       try {
         setLoading(true);
         setError("");
 
-        const response = await fetch(
-          `${API_URL}/documents/trash`,
-          {
-            credentials: "include",
-          }
+        const data = await apiFetch<TrashResponse>(
+          "/documents/trash",
         );
 
-        const data = await response.json();
-
-        if (response.status === 401) {
-          router.push("/auth/login");
+        if (!cancelled) {
+          setDocuments(data.documents ?? []);
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          router.replace("/auth/login");
           return;
         }
 
-        if (!response.ok || !data.success) {
-          throw new Error(
-            data.message || "Failed to load trash."
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Something went wrong while loading trash.",
           );
         }
-
-        setDocuments(data.documents || []);
-      } catch (trashError) {
-        console.error("Trash loading error:", trashError);
-
-        setError(
-          trashError instanceof Error
-            ? trashError.message
-            : "Something went wrong while loading trash."
-        );
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    };
+    }
 
-    loadTrash();
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
-  // ==========================
-  // Restore Document
-  // ==========================
-
-  const restoreDocument = async () => {
-    if (!documentToRestore) {
-      return;
-    }
+  async function restoreDocument() {
+    if (!documentToRestore) return;
 
     try {
       setRestoring(true);
       setError("");
 
-      const response = await fetch(
-        `${API_URL}/documents/${documentToRestore._id}/restore`,
+      await apiFetch(
+        `/documents/${documentToRestore._id}/restore`,
         {
           method: "PATCH",
-          credentials: "include",
-        }
+        },
       );
 
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
-        return;
-      }
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.message || "Failed to restore document."
-        );
-      }
-
-      setDocuments((currentDocuments) =>
-        currentDocuments.filter(
-          (document) =>
-            document._id !== documentToRestore._id
-        )
+      setDocuments((current) =>
+        current.filter(
+          (doc) => doc._id !== documentToRestore._id,
+        ),
       );
 
       setDocumentToRestore(null);
-    } catch (restoreError) {
-      console.error(
-        "Restore document error:",
-        restoreError
-      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
 
       setError(
-        restoreError instanceof Error
-          ? restoreError.message
-          : "Failed to restore document."
+        err instanceof Error
+          ? err.message
+          : "Failed to restore document.",
       );
     } finally {
       setRestoring(false);
     }
-  };
-
-  // ==========================
-// Permanent Delete Document
-// ==========================
-
-const permanentlyDeleteDocument = async () => {
-  if (!documentToDelete) {
-    return;
   }
 
-  try {
-    setPermanentlyDeleting(true);
-    setError("");
+  async function permanentlyDeleteDocument() {
+    if (!documentToDelete) return;
 
-    const response = await fetch(
-      `${API_URL}/documents/${documentToDelete._id}/permanent`,
-      {
-        method: "DELETE",
-        credentials: "include",
-      }
-    );
+    try {
+      setPermanentlyDeleting(true);
+      setError("");
 
-    const data = await response.json();
-
-    if (response.status === 401) {
-      router.push("/auth/login");
-      return;
-    }
-
-    if (!response.ok || !data.success) {
-      throw new Error(
-        data.message || "Failed to permanently delete document."
+      await apiFetch(
+        `/documents/${documentToDelete._id}/permanent`,
+        {
+          method: "DELETE",
+        },
       );
+
+      setDocuments((current) =>
+        current.filter(
+          (doc) => doc._id !== documentToDelete._id,
+        ),
+      );
+
+      setDocumentToDelete(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to permanently delete document.",
+      );
+    } finally {
+      setPermanentlyDeleting(false);
     }
-
-    setDocuments((currentDocuments) =>
-      currentDocuments.filter(
-        (document) =>
-          document._id !== documentToDelete._id
-      )
-    );
-
-    setDocumentToDelete(null);
-  } catch (deleteError) {
-    console.error(
-      "Permanent delete document error:",
-      deleteError
-    );
-
-    setError(
-      deleteError instanceof Error
-        ? deleteError.message
-        : "Failed to permanently delete document."
-    );
-  } finally {
-    setPermanentlyDeleting(false);
   }
-};
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100">
-      {/* ========================== */}
-      {/* Top Bar */}
-      {/* ========================== */}
+    <div className="mx-auto max-w-6xl space-y-8">
+      {/* Header */}
+      <section className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kf-accent-ink">
+            Document recovery
+          </p>
 
-      <header className="fixed left-0 right-0 top-0 z-40 h-[78px] border-b border-white/[0.06] bg-[#09090b]/95 backdrop-blur-xl">
-        <div className="flex h-full items-center justify-between px-6 lg:px-8">
-          <div className="flex items-center gap-5">
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard")}
-              className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-200"
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              >
-                <path
-                  d="M19 12H5M12 19l-7-7 7-7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-kf-ink sm:text-4xl">
+            Trash
+          </h1>
 
-              Dashboard
-            </button>
+          <p className="mt-3 text-sm leading-6 text-kf-muted sm:text-base">
+            Recover documents you removed from your workspace or
+            permanently delete them when you no longer need them.
+          </p>
+        </div>
 
-            <span className="text-zinc-700">/</span>
+        <Button
+          variant="secondary"
+          href="/dashboard/documents"
+        >
+          <IconDocument size={16} />
+          Documents
+          <IconArrowRight size={15} />
+        </Button>
+      </section>
 
-            <span className="text-sm font-medium text-zinc-200">
-              Trash
-            </span>
+      {/* Overview */}
+      <section className="grid gap-4 sm:grid-cols-3">
+        <div className="kf-card p-5">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-kf-muted">
+            In trash
+          </p>
+
+          <p className="mt-3 text-3xl font-bold tracking-tight text-kf-ink">
+            {loading ? "—" : documents.length}
+          </p>
+
+          <p className="mt-2 text-xs text-kf-faint">
+            Documents currently removed
+          </p>
+        </div>
+
+        <div className="kf-card p-5">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-kf-muted">
+            Recovery
+          </p>
+
+          <p className="mt-3 text-sm font-semibold text-kf-ink">
+            Restore anytime
+          </p>
+
+          <p className="mt-2 text-xs leading-5 text-kf-faint">
+            Restore a document back to your Documents workspace.
+          </p>
+        </div>
+
+        <div className="kf-card hidden p-5 sm:block">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-kf-muted">
+            Permanent deletion
+          </p>
+
+          <p className="mt-3 text-sm font-semibold text-kf-error">
+            Cannot be undone
+          </p>
+
+          <p className="mt-2 text-xs leading-5 text-kf-faint">
+            Only permanently delete documents when you are sure.
+          </p>
+        </div>
+      </section>
+
+      {/* Error */}
+      {error && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-kf-error/20 bg-kf-error-soft px-4 py-4 text-sm text-kf-error sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold">
+              Something went wrong
+            </p>
+
+            <p className="mt-1 opacity-90">
+              {error}
+            </p>
           </div>
 
           <button
             type="button"
-            onClick={() =>
-              router.push("/dashboard/documents")
-            }
-            className="rounded-lg border border-white/[0.08] px-4 py-2 text-sm font-medium text-zinc-400 transition hover:bg-white/[0.03] hover:text-zinc-200"
+            onClick={() => router.refresh()}
+            className="w-fit rounded-lg px-3 py-2 font-semibold hover:bg-white/60 hover:underline"
           >
-            Documents
+            Retry
           </button>
         </div>
-      </header>
+      )}
 
-      {/* ========================== */}
-      {/* Main */}
-      {/* ========================== */}
-
-      <main className="mx-auto max-w-6xl px-6 pb-20 pt-32 lg:px-8">
-        {/* Heading */}
-
-        <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-          <div>
-            <p className="mb-3 text-sm font-medium text-red-400">
-              Recycle bin
-            </p>
-
-            <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Trash
-            </h1>
-
-            <p className="mt-3 max-w-2xl text-base leading-7 text-zinc-500">
-              Documents moved here can be restored to your
-              workspace.
-            </p>
-          </div>
-
-          <div className="shrink-0 rounded-lg border border-white/[0.07] bg-white/[0.02] px-4 py-2.5">
-            <p className="text-xs text-zinc-600">
-              Deleted documents
-            </p>
-
-            <p className="mt-0.5 text-sm font-medium text-zinc-300">
-              {loading ? "—" : documents.length}
-            </p>
-          </div>
+      {/* Content */}
+      {loading ? (
+        <div className="kf-card flex min-h-[320px] items-center justify-center">
+          <Spinner label="Loading trash..." />
         </div>
+      ) : documents.length === 0 ? (
+        <EmptyState
+          icon={<IconCheck size={22} />}
+          title="Trash is empty"
+          description="Documents you move to trash will appear here. You can restore them whenever you need."
+          action={
+            <Button href="/dashboard/documents">
+              <IconDocument size={16} />
+              Back to documents
+              <IconArrowRight size={15} />
+            </Button>
+          }
+        />
+      ) : (
+        <section>
+          <div className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kf-accent-ink">
+              Removed documents
+            </p>
 
-        {/* ========================== */}
-        {/* Loading */}
-        {/* ========================== */}
+            <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-kf-ink">
+                  Recently deleted
+                </h2>
 
-        {loading ? (
-          <section className="rounded-2xl border border-white/[0.08] bg-[#0d0d0f]">
-            <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
-              <div className="h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-red-500" />
-
-              <p className="mt-4 text-sm text-zinc-500">
-                Loading trash...
-              </p>
-            </div>
-          </section>
-        ) : error ? (
-          /* ========================== */
-          /* Error */
-          /* ========================== */
-
-          <section className="rounded-2xl border border-red-500/15 bg-[#0d0d0f]">
-            <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-red-500/10 bg-red-500/[0.06] text-red-400">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                >
-                  <circle cx="12" cy="12" r="9" />
-
-                  <path
-                    d="M12 8v5"
-                    strokeLinecap="round"
-                  />
-
-                  <path
-                    d="M12 16h.01"
-                    strokeLinecap="round"
-                  />
-                </svg>
+                <p className="mt-1 text-sm text-kf-muted">
+                  Restore documents or permanently remove them.
+                </p>
               </div>
 
-              <h2 className="mt-5 text-base font-semibold text-zinc-200">
-                Unable to load trash
-              </h2>
-
-              <p className="mt-2 max-w-md text-sm leading-6 text-zinc-600">
-                {error}
-              </p>
-
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="mt-5 rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.03] hover:text-zinc-200"
-              >
-                Try again
-              </button>
+              <span className="text-xs text-kf-faint">
+                {documents.length}{" "}
+                {documents.length === 1
+                  ? "document"
+                  : "documents"}
+              </span>
             </div>
-          </section>
-        ) : documents.length === 0 ? (
-          /* ========================== */
-          /* Empty Trash */
-          /* ========================== */
+          </div>
 
-          <section className="rounded-2xl border border-white/[0.08] bg-[#0d0d0f]">
-            <div className="flex min-h-[420px] flex-col items-center justify-center px-6 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-emerald-400/10 bg-emerald-500/[0.07] text-emerald-400">
-                <svg
-                  width="25"
-                  height="25"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                >
-                  <path
-                    d="M20 6 9 17l-5-5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-
-              <h2 className="mt-5 text-lg font-semibold text-zinc-200">
-                Trash is empty
-              </h2>
-
-              <p className="mt-2 max-w-md text-sm leading-6 text-zinc-600">
-                Documents you move to trash will appear here.
-                You can restore them whenever you need.
-              </p>
-
-              <button
-                type="button"
-                onClick={() =>
-                  router.push("/dashboard/documents")
-                }
-                className="mt-6 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
-              >
-                Back to documents
-              </button>
-            </div>
-          </section>
-        ) : (
-          /* ========================== */
-          /* Trash List */
-          /* ========================== */
-
-          <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0d0f]">
-            {/* List Header */}
-
-            <div className="border-b border-white/[0.06] px-5 py-4 sm:px-6">
-              <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
-                <span>Document</span>
-
-                <span className="hidden sm:block">
-                  Deleted
-                </span>
-              </div>
+          <div className="kf-card overflow-hidden">
+            {/* Desktop heading */}
+            <div className="hidden border-b border-kf-border px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-kf-faint sm:grid sm:grid-cols-[minmax(0,1fr)_130px_auto] sm:items-center sm:gap-5">
+              <span>Document</span>
+              <span>Deleted</span>
+              <span>Actions</span>
             </div>
 
-            {/* Documents */}
-
-            <div className="divide-y divide-white/[0.05]">
-              {documents.map((document) => (
+            <div className="divide-y divide-kf-border">
+              {documents.map((doc) => (
                 <div
-                  key={document._id}
-                  className="grid grid-cols-1 gap-4 px-5 py-5 sm:grid-cols-[minmax(0,1fr)_120px] sm:items-center sm:px-6"
+                  key={doc._id}
+                  className="px-5 py-5 transition hover:bg-kf-surface-muted/40"
                 >
-                  {/* Document */}
+                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px_auto] sm:items-center sm:gap-5">
+                    {/* Document */}
+                    <div className="flex min-w-0 items-start gap-4">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-kf-error-soft text-[10px] font-bold uppercase tracking-wide text-kf-error">
+                        {getFileExtension(doc.originalName)}
+                      </div>
 
-                  <div className="flex min-w-0 items-start gap-4">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-red-400/10 bg-red-500/[0.06] text-[10px] font-bold tracking-wide text-red-400">
-                      {getExtension(document.originalName)}
-                    </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-kf-ink">
+                          {doc.title}
+                        </p>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium text-zinc-200">
-                          {document.title}
+                        <p className="mt-1 truncate text-xs text-kf-muted">
+                          {doc.originalName}
+                        </p>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-kf-muted">
+                          <span>
+                            {formatDocumentType(
+                              doc.documentType,
+                            )}
+                          </span>
+
+                          <span aria-hidden="true">·</span>
+
+                          <span>
+                            {formatBytes(doc.fileSize)}
+                          </span>
+                        </div>
+
+                        {doc.tags.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {doc.tags
+                              .slice(0, 3)
+                              .map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="rounded-md border border-kf-border bg-kf-surface-muted px-2 py-1 text-[10px] font-medium text-kf-muted"
+                                >
+                                  #{tag}
+                                </span>
+                              ))}
+
+                            {doc.tags.length > 3 && (
+                              <span className="rounded-md bg-kf-surface-muted px-2 py-1 text-[10px] text-kf-faint">
+                                +{doc.tags.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        <p className="mt-2 text-xs text-kf-faint sm:hidden">
+                          Deleted{" "}
+                          {formatDate(
+                            doc.deletedAt || doc.createdAt,
+                          )}
                         </p>
                       </div>
-
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600">
-                        <span>
-                          {getDocumentTypeLabel(
-                            document.documentType
-                          )}
-                        </span>
-
-                        <span className="text-zinc-800">
-                          •
-                        </span>
-
-                        <span>
-                          {formatFileSize(document.fileSize)}
-                        </span>
-
-                        {document.tags.length > 0 && (
-                          <>
-                            <span className="text-zinc-800">
-                              •
-                            </span>
-
-                            <span className="truncate">
-                              {document.tags
-                                .slice(0, 3)
-                                .join(", ")}
-                            </span>
-                          </>
-                        )}
-                      </div>
-
-                      <p className="mt-2 text-xs text-zinc-700">
-                        Deleted{" "}
-                        {formatDate(document.deletedAt)}
-                      </p>
                     </div>
 
-                    {/* Restore */}
+                    {/* Deleted date */}
+                    <p className="hidden text-xs text-kf-muted sm:block">
+                      {formatDate(
+                        doc.deletedAt || doc.createdAt,
+                      )}
+                    </p>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDocumentToRestore(document)
-                      }
-                      aria-label={`Restore ${document.title}`}
-                      className="flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-xs font-medium text-zinc-400 transition hover:border-emerald-500/20 hover:bg-emerald-500/[0.05] hover:text-emerald-400"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
+                    {/* Actions */}
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          setDocumentToRestore(doc)
+                        }
                       >
-                        <path
-                          d="M3 12a9 9 0 1 0 3-6.7"
-                          strokeLinecap="round"
-                        />
+                        <IconRestore size={14} />
+                        Restore
+                      </Button>
 
-                        <path
-                          d="M3 4v5h5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-
-                      Restore
-                    </button>
-
-                    {/* Permanent Delete */}
-
-<button
-  type="button"
-  onClick={() =>
-    setDocumentToDelete(document)
-  }
-  aria-label={`Permanently delete ${document.title}`}
-  className="flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-xs font-medium text-zinc-400 transition hover:border-red-500/20 hover:bg-red-500/[0.05] hover:text-red-400"
->
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.7"
-  >
-    <path
-      d="M4 7h16"
-      strokeLinecap="round"
-    />
-
-    <path
-      d="M10 11v6M14 11v6"
-      strokeLinecap="round"
-    />
-
-    <path
-      d="m6 7 1 13h10l1-13"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-
-    <path
-      d="M9 7V4h6v3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-
-  Delete
-</button>
-                  </div>
-
-                  {/* Deleted Date */}
-
-                  <div className="hidden text-xs text-zinc-600 sm:block">
-                    {formatDate(document.deletedAt)}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setDocumentToDelete(doc)
+                        }
+                        className="text-kf-error hover:bg-kf-error-soft"
+                      >
+                        <IconTrash size={14} />
+                        <span className="hidden sm:inline">
+                          Delete
+                        </span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-          </section>
-        )}
-      </main>
+          </div>
+        </section>
+      )}
 
-      {/* ========================== */}
-      {/* Restore Dialog */}
-      {/* ========================== */}
-
+      {/* Restore modal */}
       {documentToRestore && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-kf-ink/35 px-4 backdrop-blur-sm"
           onClick={() => {
             if (!restoring) {
               setDocumentToRestore(null);
@@ -625,178 +431,133 @@ const permanentlyDeleteDocument = async () => {
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="restore-dialog-title"
-            className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#111114] p-6 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
+            aria-labelledby="restore-document-title"
+            className="w-full max-w-md rounded-2xl border border-kf-border bg-kf-surface p-6 shadow-[var(--kf-shadow)] sm:p-7"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
-            {/* Icon */}
-
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-500/10 bg-emerald-500/[0.07] text-emerald-400">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-              >
-                <path
-                  d="M3 12a9 9 0 1 0 3-6.7"
-                  strokeLinecap="round"
-                />
-
-                <path
-                  d="M3 4v5h5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-kf-success-soft text-kf-success">
+              <IconRestore size={20} />
             </div>
 
+            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.16em] text-kf-success">
+              Document recovery
+            </p>
+
             <h2
-              id="restore-dialog-title"
-              className="mt-5 text-lg font-semibold text-white"
+              id="restore-document-title"
+              className="mt-1 text-xl font-semibold text-kf-ink"
             >
               Restore document?
             </h2>
 
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
-              <span className="font-medium text-zinc-300">
+            <p className="mt-2 text-sm leading-6 text-kf-muted">
+              <span className="font-semibold text-kf-ink">
                 {documentToRestore.title}
               </span>{" "}
               will be restored to your Documents workspace.
             </p>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
                 disabled={restoring}
                 onClick={() =>
                   setDocumentToRestore(null)
                 }
-                className="rounded-lg border border-white/[0.08] px-4 py-2.5 text-sm font-medium text-zinc-400 transition hover:bg-white/[0.03] hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
-              </button>
+              </Button>
 
-              <button
-                type="button"
+              <Button
                 disabled={restoring}
-                onClick={restoreDocument}
-                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() =>
+                  void restoreDocument()
+                }
               >
-                {restoring && (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                )}
-
+                <IconRestore size={15} />
                 {restoring
                   ? "Restoring..."
                   : "Restore document"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
-      {/* ========================== */}
-{/* Permanent Delete Dialog */}
-{/* ========================== */}
 
-{documentToDelete && (
-  <div
-    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6 backdrop-blur-sm"
-    onClick={() => {
-      if (!permanentlyDeleting) {
-        setDocumentToDelete(null);
-      }
-    }}
-  >
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="permanent-delete-dialog-title"
-      className="w-full max-w-md rounded-2xl border border-red-500/10 bg-[#111114] p-6 shadow-2xl"
-      onClick={(event) => event.stopPropagation()}
-    >
-      {/* Icon */}
-
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-500/10 bg-red-500/[0.07] text-red-400">
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
+      {/* Permanent delete modal */}
+      {documentToDelete && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-kf-ink/35 px-4 backdrop-blur-sm"
+          onClick={() => {
+            if (!permanentlyDeleting) {
+              setDocumentToDelete(null);
+            }
+          }}
         >
-          <path
-            d="M3 6h18"
-            strokeLinecap="round"
-          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="permanent-delete-title"
+            className="w-full max-w-md rounded-2xl border border-kf-border bg-kf-surface p-6 shadow-[var(--kf-shadow)] sm:p-7"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-kf-error-soft text-kf-error">
+              <IconTrash size={20} />
+            </div>
 
-          <path
-            d="M8 6V4h8v2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.16em] text-kf-error">
+              Permanent deletion
+            </p>
 
-          <path
-            d="m19 6-1 14H6L5 6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+            <h2
+              id="permanent-delete-title"
+              className="mt-1 text-xl font-semibold text-kf-ink"
+            >
+              Permanently delete document?
+            </h2>
 
-          <path
-            d="M10 11v5M14 11v5"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
+            <p className="mt-2 text-sm leading-6 text-kf-muted">
+              <span className="font-semibold text-kf-ink">
+                {documentToDelete.title}
+              </span>{" "}
+              will be permanently removed from KnowFlow.
+            </p>
 
-      <h2
-        id="permanent-delete-dialog-title"
-        className="mt-5 text-lg font-semibold text-white"
-      >
-        Permanently delete document?
-      </h2>
+            <div className="mt-4 rounded-xl border border-kf-error/15 bg-kf-error-soft px-3.5 py-3 text-xs font-medium leading-5 text-kf-error">
+              This action cannot be undone.
+            </div>
 
-      <p className="mt-2 text-sm leading-6 text-zinc-500">
-        <span className="font-medium text-zinc-300">
-          {documentToDelete.title}
-        </span>{" "}
-        will be permanently removed from KnowFlow.
-        <span className="mt-2 block font-medium text-red-400/80">
-          This action cannot be undone.
-        </span>
-      </p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
+                disabled={permanentlyDeleting}
+                onClick={() =>
+                  setDocumentToDelete(null)
+                }
+              >
+                Cancel
+              </Button>
 
-      <div className="mt-6 flex justify-end gap-3">
-        <button
-          type="button"
-          disabled={permanentlyDeleting}
-          onClick={() => setDocumentToDelete(null)}
-          className="rounded-lg border border-white/[0.08] px-4 py-2.5 text-sm font-medium text-zinc-400 transition hover:bg-white/[0.03] hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Cancel
-        </button>
-
-        <button
-          type="button"
-          disabled={permanentlyDeleting}
-          onClick={permanentlyDeleteDocument}
-          className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {permanentlyDeleting && (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-          )}
-
-          {permanentlyDeleting
-            ? "Deleting..."
-            : "Delete permanently"}
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+              <Button
+                variant="danger"
+                disabled={permanentlyDeleting}
+                onClick={() =>
+                  void permanentlyDeleteDocument()
+                }
+              >
+                <IconTrash size={15} />
+                {permanentlyDeleting
+                  ? "Deleting..."
+                  : "Delete permanently"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

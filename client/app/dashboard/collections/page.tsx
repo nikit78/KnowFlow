@@ -2,32 +2,39 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useDashboard } from "../layout";
+import { apiFetch, ApiError } from "@/lib/api";
+import type { Collection } from "@/lib/types";
+import { formatDate } from "@/lib/format";
+import Button from "@/components/ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
+import Input from "@/components/ui/Input";
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconFolder,
+  IconPlus,
+} from "@/components/icons";
 
-type Collection = {
-  _id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  color?: string;
-  documents?: string[];
-  createdAt: string;
-  updatedAt?: string;
+type CollectionsResponse = {
+  success?: boolean;
+  collections?: Collection[];
+  message?: string;
 };
 
-const API_URL = "http://localhost:5000/api";
-
 const COLORS = [
-  "#3b82f6",
-  "#8b5cf6",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#ec4899",
+  "#0f766e",
+  "#0369a1",
+  "#b45309",
+  "#be123c",
+  "#7c3aed",
+  "#15803d",
 ];
 
 const ICONS = ["📚", "💡", "🎓", "💼", "📁", "🧠", "⭐", "🔬"];
 
 export default function CollectionsPage() {
+  useDashboard();
   const router = useRouter();
 
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -41,7 +48,7 @@ export default function CollectionsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [icon, setIcon] = useState("📚");
-  const [color, setColor] = useState("#3b82f6");
+  const [color, setColor] = useState("#0f766e");
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -54,25 +61,17 @@ export default function CollectionsPage() {
       setLoading(true);
       setError("");
 
-      const response = await fetch(`${API_URL}/collections`, {
-        credentials: "include",
-      });
+      const data = await apiFetch<CollectionsResponse>("/collections");
 
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
+      setCollections(data.collections ?? []);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
         return;
       }
 
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to load collections");
-      }
-
-      setCollections(data.collections || []);
-    } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Something went wrong"
+        err instanceof Error ? err.message : "Failed to load collections",
       );
     } finally {
       setLoading(false);
@@ -83,35 +82,35 @@ export default function CollectionsPage() {
     void fetchCollections();
   }, [fetchCollections]);
 
-  const openCreateModal = () => {
+  function openCreateModal() {
     setEditingCollection(null);
     setName("");
     setDescription("");
     setIcon("📚");
-    setColor("#3b82f6");
+    setColor("#0f766e");
     setSaveError("");
     setShowModal(true);
-  };
+  }
 
-  const openEditModal = (collection: Collection) => {
+  function openEditModal(collection: Collection) {
     setEditingCollection(collection);
     setName(collection.name);
     setDescription(collection.description || "");
     setIcon(collection.icon || "📚");
-    setColor(collection.color || "#3b82f6");
+    setColor(collection.color || "#0f766e");
     setSaveError("");
     setShowModal(true);
-  };
+  }
 
-  const closeModal = () => {
+  function closeModal() {
     if (saving) return;
 
     setShowModal(false);
     setEditingCollection(null);
     setSaveError("");
-  };
+  }
 
-  const handleSave = async () => {
+  async function handleSave() {
     if (!name.trim()) {
       setSaveError("Collection name is required.");
       return;
@@ -128,30 +127,16 @@ export default function CollectionsPage() {
         color,
       };
 
-      const url = editingCollection
-        ? `${API_URL}/collections/${editingCollection._id}`
-        : `${API_URL}/collections`;
-
-      const method = editingCollection ? "PUT" : "POST";
-
-      const response = await fetch(url, {
-        method,
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to save collection");
+      if (editingCollection) {
+        await apiFetch(`/collections/${editingCollection._id}`, {
+          method: "PUT",
+          body: payload,
+        });
+      } else {
+        await apiFetch("/collections", {
+          method: "POST",
+          body: payload,
+        });
       }
 
       setShowModal(false);
@@ -159,218 +144,245 @@ export default function CollectionsPage() {
 
       await fetchCollections();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
       setSaveError(
-        err instanceof Error ? err.message : "Something went wrong"
+        err instanceof Error ? err.message : "Failed to save collection",
       );
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  const handleDelete = async () => {
+  async function handleDelete() {
     if (!deleteTarget) return;
 
     try {
       setDeleting(true);
       setError("");
 
-      const response = await fetch(
-        `${API_URL}/collections/${deleteTarget._id}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to delete collection");
-      }
+      await apiFetch(`/collections/${deleteTarget._id}`, {
+        method: "DELETE",
+      });
 
       setDeleteTarget(null);
 
       await fetchCollections();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
       setError(
-        err instanceof Error ? err.message : "Failed to delete collection"
+        err instanceof Error ? err.message : "Failed to delete collection",
       );
+
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
     }
-  };
-
-  const openCollection = (collectionId: string) => {
-    router.push(`/dashboard/collections/${collectionId}`);
-  };
-
-  const handleCollectionKeyDown = (
-    event: React.KeyboardEvent<HTMLDivElement>,
-    collectionId: string
-  ) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      openCollection(collectionId);
-    }
-  };
+  }
 
   const totalDocuments = collections.reduce(
-    (total, collection) => total + (collection.documents?.length || 0),
-    0
+    (total, collection) =>
+      total +
+      (Array.isArray(collection.documents)
+        ? collection.documents.length
+        : 0),
+    0,
   );
 
   return (
-    <main className="min-h-screen bg-[#09090b] text-zinc-100">
-      <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
-        {/* Header */}
-        <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-6xl space-y-8">
+      {/* Header */}
+      <section className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kf-accent-ink">
+            Knowledge workspace
+          </p>
+
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-kf-ink sm:text-4xl">
+            Collections
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-kf-muted sm:text-base">
+            Group related documents into focused spaces so your knowledge stays
+            easy to find, review, and use.
+          </p>
+        </div>
+
+        <Button onClick={openCreateModal}>
+          <IconPlus size={16} />
+          New collection
+        </Button>
+      </section>
+
+      {/* Overview */}
+      <section className="grid gap-4 sm:grid-cols-2">
+        <div className="kf-card group relative overflow-hidden p-5">
+          <div className="absolute right-0 top-0 h-20 w-20 translate-x-8 -translate-y-8 rounded-full bg-kf-accent-soft opacity-70" />
+
+          <p className="relative text-xs font-medium uppercase tracking-[0.14em] text-kf-muted">
+            Total collections
+          </p>
+
+          <div className="relative mt-3 flex items-end justify-between gap-4">
+            <p className="text-3xl font-bold tracking-tight text-kf-ink">
+              {collections.length}
+            </p>
+
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-kf-accent-soft text-kf-accent-ink">
+              <IconFolder size={19} />
+            </div>
+          </div>
+
+          <p className="relative mt-2 text-xs text-kf-faint">
+            Focused knowledge spaces
+          </p>
+        </div>
+
+        <div className="kf-card group relative overflow-hidden p-5">
+          <div className="absolute right-0 top-0 h-20 w-20 translate-x-8 -translate-y-8 rounded-full bg-kf-surface-muted" />
+
+          <p className="relative text-xs font-medium uppercase tracking-[0.14em] text-kf-muted">
+            Documents organized
+          </p>
+
+          <div className="relative mt-3 flex items-end justify-between gap-4">
+            <p className="text-3xl font-bold tracking-tight text-kf-ink">
+              {totalDocuments}
+            </p>
+
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-kf-border bg-kf-surface text-kf-muted">
+              <span className="text-lg">◫</span>
+            </div>
+          </div>
+
+          <p className="relative mt-2 text-xs text-kf-faint">
+            Documents grouped across collections
+          </p>
+        </div>
+      </section>
+
+      {/* Error */}
+      {error && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-kf-error/20 bg-kf-error-soft px-4 py-4 text-sm text-kf-error sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="mb-2 text-sm font-medium text-blue-400">
-              Organization
-            </p>
-
-            <h1 className="text-3xl font-semibold tracking-tight">
-              Collections
-            </h1>
-
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-              Organize your knowledge into focused spaces for easier access
-              and management.
-            </p>
+            <p className="font-semibold">Something went wrong</p>
+            <p className="mt-1 opacity-90">{error}</p>
           </div>
 
           <button
             type="button"
-            onClick={openCreateModal}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
+            onClick={() => void fetchCollections()}
+            className="w-fit rounded-lg px-3 py-2 font-semibold transition hover:bg-white/60 hover:underline"
           >
-            <span className="text-lg leading-none">+</span>
-            New Collection
+            Retry
           </button>
         </div>
+      )}
 
-        {/* Stats */}
-        <div className="mb-8 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
-            <p className="text-sm text-zinc-500">Total collections</p>
-            <p className="mt-2 text-2xl font-semibold">
-              {collections.length}
-            </p>
+      {/* Collection content */}
+      {loading ? (
+        <section>
+          <div className="mb-4">
+            <div className="h-5 w-36 animate-pulse rounded bg-kf-surface-muted" />
+            <div className="mt-2 h-4 w-64 animate-pulse rounded bg-kf-surface-muted" />
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
-            <p className="text-sm text-zinc-500">Documents organized</p>
-            <p className="mt-2 text-2xl font-semibold">
-              {totalDocuments}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
-            <p className="text-sm text-zinc-500">Status</p>
-            <p className="mt-2 text-2xl font-semibold text-emerald-400">
-              Active
-            </p>
-          </div>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="mb-6 flex items-center justify-between rounded-xl border border-red-900/50 bg-red-950/20 px-4 py-3 text-sm text-red-300">
-            <span>{error}</span>
-
-            <button
-              type="button"
-              onClick={() => void fetchCollections()}
-              className="font-semibold text-red-200 hover:text-white"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
-        {/* Loading */}
-        {loading ? (
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map((item) => (
               <div
                 key={item}
-                className="h-52 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/60"
+                className="h-56 animate-pulse rounded-2xl border border-kf-border bg-kf-surface-muted"
               />
             ))}
           </div>
-        ) : collections.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/50 px-6 py-20 text-center">
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-3xl">
-              📚
-            </div>
-
-            <h2 className="text-xl font-semibold">
-              No collections yet
-            </h2>
-
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
-              Create your first collection to organize documents and
-              knowledge around a specific topic.
-            </p>
-
-            <button
-              type="button"
-              onClick={openCreateModal}
-              className="mt-6 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500"
-            >
+        </section>
+      ) : collections.length === 0 ? (
+        <EmptyState
+          icon={<IconFolder size={22} />}
+          title="No collections yet"
+          description="Create your first collection to organize documents around a topic, project, subject, or workflow."
+          action={
+            <Button onClick={openCreateModal}>
+              <IconPlus size={16} />
               Create your first collection
-            </button>
+            </Button>
+          }
+        />
+      ) : (
+        <section>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-kf-ink">
+              Your collections
+            </h2>
+            <p className="mt-1 text-sm text-kf-muted">
+              Open a collection to explore its documents.
+            </p>
           </div>
-        ) : (
+
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {collections.map((collection) => {
-              const documentCount = collection.documents?.length || 0;
+              const documentCount = Array.isArray(collection.documents)
+                ? collection.documents.length
+                : 0;
+
+              const collectionColor = collection.color || "#0f766e";
 
               return (
                 <div
                   key={collection._id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => openCollection(collection._id)}
-                  onKeyDown={(event) =>
-                    handleCollectionKeyDown(event, collection._id)
+                  aria-label={`Open collection ${collection.name}`}
+                  onClick={() =>
+                    router.push(
+                      `/dashboard/collections/${collection._id}`,
+                    )
                   }
-                  className="group relative cursor-pointer overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/80 p-5 transition hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+
+                      router.push(
+                        `/dashboard/collections/${collection._id}`,
+                      );
+                    }
+                  }}
+                  className="kf-card group relative cursor-pointer overflow-hidden p-5 transition duration-200 hover:-translate-y-0.5 hover:border-kf-border-strong hover:shadow-[var(--kf-shadow)] focus:outline-none focus:ring-2 focus:ring-kf-accent/30"
                 >
-                  {/* Collection color indicator */}
+                  {/* Accent line */}
                   <div
                     className="absolute inset-x-0 top-0 h-1"
                     style={{
-                      backgroundColor: collection.color || "#3b82f6",
+                      backgroundColor: collectionColor,
                     }}
                   />
 
-                  <div className="flex items-start justify-between gap-4">
+                  {/* Top row */}
+                  <div className="flex items-start justify-between gap-3">
                     <div
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl"
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-black/5 text-2xl shadow-sm"
                       style={{
-                        backgroundColor: `${
-                          collection.color || "#3b82f6"
-                        }20`,
+                        backgroundColor: `${collectionColor}18`,
                       }}
                     >
                       {collection.icon || "📚"}
                     </div>
 
                     <div
-                      className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100"
+                      className="flex gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
                       onClick={(event) => event.stopPropagation()}
                     >
                       <button
                         type="button"
                         onClick={() => openEditModal(collection)}
-                        className="rounded-lg px-3 py-2 text-xs font-medium text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                        className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-semibold text-kf-muted transition hover:border-kf-border hover:bg-kf-surface-muted hover:text-kf-ink"
                       >
                         Edit
                       </button>
@@ -378,132 +390,146 @@ export default function CollectionsPage() {
                       <button
                         type="button"
                         onClick={() => setDeleteTarget(collection)}
-                        className="rounded-lg px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                        className="rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-semibold text-kf-error transition hover:border-kf-error/15 hover:bg-kf-error-soft"
                       >
                         Delete
                       </button>
                     </div>
                   </div>
 
-                  <h2 className="mt-5 text-lg font-semibold">
-                    {collection.name}
-                  </h2>
+                  {/* Content */}
+                  <div className="mt-5">
+                    <h3 className="line-clamp-1 text-lg font-semibold text-kf-ink">
+                      {collection.name}
+                    </h3>
 
-                  <p className="mt-2 min-h-12 text-sm leading-6 text-zinc-500">
-                    {collection.description || "No description added."}
-                  </p>
-
-                  {/* Collection metadata */}
-                  <div className="mt-5 flex items-center justify-between border-t border-zinc-800 pt-4">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-medium text-zinc-400">
-                        {documentCount}{" "}
-                        {documentCount === 1 ? "document" : "documents"}
-                      </span>
-
-                      <span className="text-zinc-700">•</span>
-
-                      <span className="text-xs text-zinc-600">
-                        Created{" "}
-                        {new Date(
-                          collection.createdAt
-                        ).toLocaleDateString()}
-                      </span>
-                    </div>
-
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{
-                        backgroundColor:
-                          collection.color || "#3b82f6",
-                      }}
-                    />
+                    <p className="mt-2 min-h-12 line-clamp-2 text-sm leading-6 text-kf-muted">
+                      {collection.description || "No description added yet."}
+                    </p>
                   </div>
 
-                  {/* Open hint */}
-                  <div className="mt-4 flex items-center justify-between text-xs text-zinc-600 transition group-hover:text-blue-400">
-                    <span>Open collection</span>
-                    <span>→</span>
+                  {/* Footer */}
+                  <div className="mt-5 flex items-center justify-between gap-3 border-t border-kf-border pt-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-kf-ink-soft">
+                        {documentCount}{" "}
+                        {documentCount === 1 ? "document" : "documents"}
+                      </p>
+
+                      {collection.createdAt && (
+                        <p className="mt-1 text-[11px] text-kf-faint">
+                          Created {formatDate(collection.createdAt)}
+                        </p>
+                      )}
+                    </div>
+
+                    <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-kf-accent-ink transition group-hover:gap-1.5">
+                      Open
+                      <IconArrowRight size={14} />
+                    </span>
                   </div>
                 </div>
               );
             })}
           </div>
-        )}
-      </div>
+        </section>
+      )}
 
       {/* Create / Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
-            <div className="mb-6 flex items-start justify-between">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-kf-ink/35 px-4 py-6 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeModal();
+            }
+          }}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-kf-border bg-kf-surface p-6 shadow-[var(--kf-shadow)] sm:p-7"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="collection-modal-title"
+          >
+            {/* Modal header */}
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kf-accent-ink">
+                  {editingCollection ? "Collection settings" : "New space"}
+                </p>
+
+                <h2
+                  id="collection-modal-title"
+                  className="mt-1 text-xl font-semibold text-kf-ink"
+                >
                   {editingCollection
-                    ? "Edit Collection"
-                    : "Create Collection"}
+                    ? "Edit collection"
+                    : "Create collection"}
                 </h2>
 
-                <p className="mt-1 text-sm text-zinc-500">
-                  Give your collection a clear identity.
+                <p className="mt-1.5 text-sm leading-5 text-kf-muted">
+                  Give this knowledge space a clear name, identity, and
+                  purpose.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-lg px-2 py-1 text-zinc-500 hover:bg-zinc-900 hover:text-white"
+                disabled={saving}
+                aria-label="Close collection dialog"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg text-kf-faint transition hover:bg-kf-surface-muted hover:text-kf-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
-                ✕
+                ×
               </button>
             </div>
 
-            <div className="space-y-5">
-              {/* Name */}
-              <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-300">
-                  Collection name
-                </label>
+            <div className="mt-6 space-y-5">
+              <Input
+                label="Collection name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="e.g. Machine Learning"
+              />
 
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Machine Learning"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-blue-500"
-                />
-              </div>
-
-              {/* Description */}
               <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-300">
+                <label className="mb-2 block text-sm font-medium text-kf-ink-soft">
                   Description
                 </label>
 
                 <textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(event) => setDescription(event.target.value)}
                   rows={3}
                   placeholder="What will this collection contain?"
-                  className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-blue-500"
+                  className="w-full resize-none rounded-xl border border-kf-border bg-kf-surface px-3.5 py-3 text-sm leading-6 text-kf-ink outline-none transition placeholder:text-kf-faint focus:border-kf-accent focus:ring-2 focus:ring-kf-accent/15"
                 />
               </div>
 
               {/* Icon */}
               <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-300">
-                  Icon
-                </label>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="text-sm font-medium text-kf-ink-soft">
+                    Icon
+                  </label>
 
-                <div className="flex flex-wrap gap-2">
+                  <span className="text-xs text-kf-faint">
+                    Choose an identity
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-8 gap-2">
                   {ICONS.map((item) => (
                     <button
                       key={item}
                       type="button"
                       onClick={() => setIcon(item)}
-                      className={`flex h-10 w-10 items-center justify-center rounded-lg border text-lg transition ${
+                      aria-label={`Select ${item} icon`}
+                      aria-pressed={icon === item}
+                      className={`flex h-10 items-center justify-center rounded-xl border text-lg transition ${
                         icon === item
-                          ? "border-blue-500 bg-blue-500/10"
-                          : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+                          ? "border-kf-accent bg-kf-accent-soft shadow-sm"
+                          : "border-kf-border bg-kf-surface hover:border-kf-border-strong hover:bg-kf-surface-muted"
                       }`}
                     >
                       {item}
@@ -514,9 +540,15 @@ export default function CollectionsPage() {
 
               {/* Color */}
               <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-300">
-                  Color
-                </label>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="text-sm font-medium text-kf-ink-soft">
+                    Color
+                  </label>
+
+                  <span className="text-xs text-kf-faint">
+                    Accent color
+                  </span>
+                </div>
 
                 <div className="flex flex-wrap gap-3">
                   {COLORS.map((item) => (
@@ -525,10 +557,11 @@ export default function CollectionsPage() {
                       type="button"
                       onClick={() => setColor(item)}
                       aria-label={`Select color ${item}`}
-                      className={`h-9 w-9 rounded-full border-2 transition ${
+                      aria-pressed={color === item}
+                      className={`h-9 w-9 rounded-full border-2 transition duration-150 ${
                         color === item
-                          ? "scale-110 border-white"
-                          : "border-transparent"
+                          ? "scale-110 border-kf-ink shadow-sm"
+                          : "border-transparent hover:scale-105"
                       }`}
                       style={{
                         backgroundColor: item,
@@ -538,36 +571,37 @@ export default function CollectionsPage() {
                 </div>
               </div>
 
-              {/* Save Error */}
               {saveError && (
-                <div className="rounded-xl border border-red-900/50 bg-red-950/20 px-4 py-3 text-sm text-red-300">
+                <div className="rounded-xl border border-kf-error/15 bg-kf-error-soft px-4 py-3 text-sm text-kf-error">
                   {saveError}
                 </div>
               )}
 
               {/* Actions */}
-              <div className="flex justify-end gap-3 border-t border-zinc-800 pt-5">
-                <button
-                  type="button"
-                  onClick={closeModal}
+              <div className="flex flex-col-reverse gap-3 border-t border-kf-border pt-5 sm:flex-row sm:justify-end">
+                <Button
+                  variant="secondary"
                   disabled={saving}
-                  className="rounded-xl border border-zinc-800 px-5 py-3 text-sm font-medium text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
+                  onClick={closeModal}
                 >
                   Cancel
-                </button>
+                </Button>
 
-                <button
-                  type="button"
-                  onClick={() => void handleSave()}
+                <Button
                   disabled={saving}
-                  className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => void handleSave()}
                 >
-                  {saving
-                    ? "Saving..."
-                    : editingCollection
-                      ? "Save changes"
-                      : "Create collection"}
-                </button>
+                  {saving ? (
+                    "Saving..."
+                  ) : (
+                    <>
+                      {editingCollection
+                        ? "Save changes"
+                        : "Create collection"}
+                      <IconArrowRight size={15} />
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           </div>
@@ -576,46 +610,59 @@ export default function CollectionsPage() {
 
       {/* Delete Modal */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
-            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-xl">
-              🗑️
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-kf-ink/35 px-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleting) {
+              setDeleteTarget(null);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-kf-border bg-kf-surface p-6 shadow-[var(--kf-shadow)] sm:p-7"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-collection-title"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-kf-error-soft text-kf-error">
+              <span className="text-lg">!</span>
             </div>
 
-            <h2 className="text-xl font-semibold">
+            <h2
+              id="delete-collection-title"
+              className="mt-5 text-xl font-semibold text-kf-ink"
+            >
               Delete collection?
             </h2>
 
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
+            <p className="mt-2 text-sm leading-6 text-kf-muted">
               This will permanently delete{" "}
-              <span className="font-medium text-zinc-300">
+              <span className="font-semibold text-kf-ink">
                 {deleteTarget.name}
               </span>
-              . This action cannot be undone.
+              . The documents themselves will not be deleted.
             </p>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
                 disabled={deleting}
-                className="rounded-xl border border-zinc-800 px-5 py-3 text-sm font-medium text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
+                onClick={() => setDeleteTarget(null)}
               >
                 Cancel
-              </button>
+              </Button>
 
-              <button
-                type="button"
-                onClick={() => void handleDelete()}
+              <Button
+                variant="danger"
                 disabled={deleting}
-                className="rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+                onClick={() => void handleDelete()}
               >
-                {deleting ? "Deleting..." : "Delete"}
-              </button>
+                {deleting ? "Deleting..." : "Delete collection"}
+              </Button>
             </div>
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

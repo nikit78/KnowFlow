@@ -1,29 +1,16 @@
 export const colors = {
-  background: "#09090B",
-
-  surface: "#111113",
-
-  surfaceElevated: "#18181B",
-
-  primary: "#4F6BFF",
-
-  primaryHover: "#4058E8",
-
-  accent: "#22D3EE",
-
-  text: "#F4F4F5",
-
-  textSecondary: "#A1A1AA",
-
-  textMuted: "#71717A",
-
-  border: "#27272A",
-
-  borderStrong: "#3F3F46",
-
-  success: "#22C55E",
-
-  warning: "#F59E0B",
-
-  error: "#EF4444",
+  background: "#F7F6F3",
+  surface: "#FFFFFF",
+  surfaceMuted: "#F0EEEA",
+  primary: "#0F766E",
+  primaryHover: "#0D9488",
+  accent: "#0F766E",
+  text: "#1C1917",
+  textSecondary: "#44403C",
+  textMuted: "#78716C",
+  border: "#E7E5E4",
+  borderStrong: "#D6D3D1",
+  success: "#15803D",
+  warning: "#B45309",
+  error: "#B91C1C",
 };

@@ -2,104 +2,50 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useDashboard } from "../../layout";
+import { apiFetch, ApiError } from "@/lib/api";
+import type { Collection, KnowledgeDocument } from "@/lib/types";
+import {
+  formatBytes,
+  formatDate,
+  formatDocumentType,
+  getDocumentStatusLabel,
+  getDocumentStatusTone,
+  getFileExtension,
+} from "@/lib/format";
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
+import Spinner from "@/components/ui/Spinner";
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconDocument,
+  IconFolder,
+  IconPlus,
+} from "@/components/icons";
 
-type DocumentType =
-  | "research-paper"
-  | "annual-report"
-  | "financial-statement"
-  | "lecture-notes"
-  | "book"
-  | "other";
-
-type DocumentItem = {
-  _id: string;
-  title: string;
-  originalName?: string;
-  fileSize?: number;
-  documentType: DocumentType;
-  status: "uploaded" | "processing" | "processed" | "failed";
-  tags?: string[];
-  isFavorite?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+type CollectionResponse = {
+  success?: boolean;
+  collection?: Collection;
+  message?: string;
 };
 
-type Collection = {
-  _id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  color?: string;
-  documents?: DocumentItem[];
-  createdAt: string;
-  updatedAt?: string;
-};
-
-const API_URL = "http://localhost:5000/api";
-
-const documentTypeLabels: Record<DocumentType, string> = {
-  "research-paper": "Research Paper",
-  "annual-report": "Annual Report",
-  "financial-statement": "Financial Statement",
-  "lecture-notes": "Lecture Notes",
-  book: "Book",
-  other: "Other",
-};
-
-const formatFileSize = (bytes = 0) => {
-  if (bytes < 1024) return `${bytes} B`;
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-};
-
-const formatDate = (date?: string) => {
-  if (!date) return "Unknown date";
-
-  return new Date(date).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-};
-
-const getDocumentIcon = (document: DocumentItem) => {
-  if (document.originalName?.toLowerCase().endsWith(".pdf")) {
-    return "📕";
-  }
-
-  if (
-    document.originalName?.toLowerCase().endsWith(".docx") ||
-    document.originalName?.toLowerCase().endsWith(".doc")
-  ) {
-    return "📘";
-  }
-
-  if (
-    document.originalName?.toLowerCase().endsWith(".md") ||
-    document.originalName?.toLowerCase().endsWith(".txt")
-  ) {
-    return "📝";
-  }
-
-  return "📄";
+type DocumentsResponse = {
+  success?: boolean;
+  documents?: KnowledgeDocument[];
+  message?: string;
 };
 
 export default function CollectionDetailPage() {
+  useDashboard();
+
   const params = useParams();
   const router = useRouter();
-
   const collectionId = params.id as string;
 
   const [collection, setCollection] = useState<Collection | null>(null);
-  const [allDocuments, setAllDocuments] = useState<DocumentItem[]>([]);
+  const [allDocuments, setAllDocuments] = useState<KnowledgeDocument[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [documentsLoading, setDocumentsLoading] = useState(false);
@@ -108,11 +54,15 @@ export default function CollectionDetailPage() {
   const [documentsError, setDocumentsError] = useState("");
 
   const [showAddModal, setShowAddModal] = useState(false);
+
   const [addingDocumentId, setAddingDocumentId] = useState<string | null>(
-    null
+    null,
   );
+
+  const [removeTarget, setRemoveTarget] =
+    useState<KnowledgeDocument | null>(null);
   const [removingDocumentId, setRemovingDocumentId] = useState<string | null>(
-    null
+    null,
   );
 
   const fetchCollection = useCallback(async () => {
@@ -120,30 +70,19 @@ export default function CollectionDetailPage() {
       setLoading(true);
       setError("");
 
-      const response = await fetch(
-        `${API_URL}/collections/${collectionId}`,
-        {
-          credentials: "include",
-        }
+      const data = await apiFetch<CollectionResponse>(
+        `/collections/${collectionId}`,
       );
 
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
+      setCollection(data.collection ?? null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
         return;
       }
 
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to load collection");
-      }
-
-      setCollection(data.collection);
-    } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load collection"
+        err instanceof Error ? err.message : "Failed to load collection",
       );
     } finally {
       setLoading(false);
@@ -155,30 +94,19 @@ export default function CollectionDetailPage() {
       setDocumentsLoading(true);
       setDocumentsError("");
 
-      const response = await fetch(
-        `${API_URL}/documents?page=1&limit=100`,
-        {
-          credentials: "include",
-        }
+      const data = await apiFetch<DocumentsResponse>(
+        "/documents?page=1&limit=100",
       );
 
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
+      setAllDocuments(data.documents ?? []);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
         return;
       }
 
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to load documents");
-      }
-
-      setAllDocuments(data.documents || []);
-    } catch (err) {
       setDocumentsError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load documents"
+        err instanceof Error ? err.message : "Failed to load documents",
       );
     } finally {
       setDocumentsLoading(false);
@@ -192,505 +120,548 @@ export default function CollectionDetailPage() {
     void fetchDocuments();
   }, [collectionId, fetchCollection, fetchDocuments]);
 
-  const collectionDocumentIds = useMemo(() => {
-    return new Set(
-      (collection?.documents || []).map((document) => document._id)
+  const collectionDocuments = useMemo(() => {
+    if (!collection?.documents) {
+      return [] as KnowledgeDocument[];
+    }
+
+    return collection.documents.filter(
+      (doc): doc is KnowledgeDocument => typeof doc !== "string",
     );
   }, [collection]);
 
-  const availableDocuments = useMemo(() => {
-    return allDocuments.filter(
-      (document) => !collectionDocumentIds.has(document._id)
-    );
-  }, [allDocuments, collectionDocumentIds]);
+  const collectionDocumentIds = useMemo(
+    () => new Set(collectionDocuments.map((doc) => doc._id)),
+    [collectionDocuments],
+  );
 
-  const addDocument = async (documentId: string) => {
+  const availableDocuments = useMemo(
+    () =>
+      allDocuments.filter((doc) => !collectionDocumentIds.has(doc._id)),
+    [allDocuments, collectionDocumentIds],
+  );
+
+  async function addDocument(documentId: string) {
     try {
       setAddingDocumentId(documentId);
+      setDocumentsError("");
 
-      const response = await fetch(
-        `${API_URL}/collections/${collectionId}/documents/${documentId}`,
+      await apiFetch(
+        `/collections/${collectionId}/documents/${documentId}`,
         {
           method: "POST",
-          credentials: "include",
-        }
+        },
       );
-
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to add document");
-      }
 
       await fetchCollection();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
       setDocumentsError(
-        err instanceof Error
-          ? err.message
-          : "Failed to add document"
+        err instanceof Error ? err.message : "Failed to add document",
       );
     } finally {
       setAddingDocumentId(null);
     }
-  };
+  }
 
-  const removeDocument = async (documentId: string) => {
+  async function removeDocument(documentId: string) {
     try {
       setRemovingDocumentId(documentId);
+      setError("");
 
-      const response = await fetch(
-        `${API_URL}/collections/${collectionId}/documents/${documentId}`,
+      await apiFetch(
+        `/collections/${collectionId}/documents/${documentId}`,
         {
           method: "DELETE",
-          credentials: "include",
-        }
+        },
       );
 
-      const data = await response.json();
-
-      if (response.status === 401) {
-        router.push("/auth/login");
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to remove document");
-      }
+      setRemoveTarget(null);
 
       await fetchCollection();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/auth/login");
+        return;
+      }
+
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to remove document"
+        err instanceof Error ? err.message : "Failed to remove document",
       );
     } finally {
       setRemovingDocumentId(null);
     }
-  };
+  }
 
-  const openDocument = (documentId: string) => {
-    router.push(`/dashboard/documents/${documentId}`);
-  };
+  function openAddModal() {
+    setDocumentsError("");
+    setShowAddModal(true);
+    void fetchDocuments();
+  }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#09090b] px-6 py-8 text-zinc-100 lg:px-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="h-8 w-40 animate-pulse rounded-lg bg-zinc-800" />
-          <div className="mt-4 h-5 w-72 animate-pulse rounded bg-zinc-900" />
-
-          <div className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {[1, 2, 3, 4, 5, 6].map((item) => (
-              <div
-                key={item}
-                className="h-52 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-950"
-              />
-            ))}
-          </div>
-        </div>
-      </main>
+      <div className="flex min-h-[360px] items-center justify-center">
+        <Spinner label="Loading collection..." />
+      </div>
     );
   }
 
   if (error && !collection) {
     return (
-      <main className="min-h-screen bg-[#09090b] px-6 py-8 text-zinc-100 lg:px-8">
-        <div className="mx-auto max-w-3xl">
-          <button
-            type="button"
-            onClick={() => router.push("/dashboard/collections")}
-            className="mb-8 text-sm text-zinc-400 hover:text-white"
-          >
-            ← Back to Collections
-          </button>
+      <div className="mx-auto max-w-lg space-y-5">
+        <Button
+          variant="ghost"
+          size="sm"
+          href="/dashboard/collections"
+        >
+          <IconArrowLeft size={15} />
+          Back to collections
+        </Button>
 
-          <div className="rounded-2xl border border-red-900/50 bg-red-950/20 p-8 text-center">
-            <div className="text-3xl">⚠️</div>
-
-            <h1 className="mt-4 text-xl font-semibold">
-              Unable to load collection
-            </h1>
-
-            <p className="mt-2 text-sm text-zinc-500">{error}</p>
-
-            <button
-              type="button"
-              onClick={() => void fetchCollection()}
-              className="mt-6 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500"
-            >
-              Retry
-            </button>
+        <div className="kf-card p-8 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-kf-error-soft text-kf-error">
+            !
           </div>
+
+          <h1 className="mt-5 text-xl font-semibold text-kf-ink">
+            Unable to load collection
+          </h1>
+
+          <p className="mt-2 text-sm leading-6 text-kf-muted">
+            {error}
+          </p>
+
+          <Button
+            className="mt-6"
+            onClick={() => void fetchCollection()}
+          >
+            Retry
+          </Button>
         </div>
-      </main>
+      </div>
     );
   }
 
-  if (!collection) {
-    return null;
-  }
+  if (!collection) return null;
 
-  const documents = collection.documents || [];
+  const collectionColor = collection.color || "#0f766e";
 
   return (
-    <main className="min-h-screen bg-[#09090b] text-zinc-100">
-      <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
-        {/* Back */}
-        <button
-          type="button"
-          onClick={() => router.push("/dashboard/collections")}
-          className="mb-7 inline-flex items-center gap-2 text-sm font-medium text-zinc-500 transition hover:text-white"
+    <div className="mx-auto max-w-6xl space-y-8">
+      {/* Breadcrumb / Back */}
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          href="/dashboard/collections"
         >
-          <span>←</span>
-          Back to Collections
-        </button>
+          <IconArrowLeft size={15} />
+          Back to collections
+        </Button>
+      </div>
 
-        {/* Collection Header */}
-        <section
-          className="relative overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950/80 p-6 sm:p-8"
-        >
-          <div
-            className="absolute inset-x-0 top-0 h-1"
-            style={{
-              backgroundColor: collection.color || "#3b82f6",
-            }}
-          />
+      {/* Collection hero */}
+      <section className="kf-card relative overflow-hidden p-6 sm:p-8">
+        <div
+          className="absolute inset-x-0 top-0 h-1"
+          style={{
+            backgroundColor: collectionColor,
+          }}
+        />
 
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-5">
-              <div
-                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-3xl"
-                style={{
-                  backgroundColor: `${
-                    collection.color || "#3b82f6"
-                  }20`,
-                }}
-              >
-                {collection.icon || "📚"}
-              </div>
+        <div
+          className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full opacity-40 blur-2xl"
+          style={{
+            backgroundColor: `${collectionColor}18`,
+          }}
+        />
 
-              <div>
-                <p className="text-sm font-medium text-blue-400">
-                  Collection
-                </p>
+        <div className="relative flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-start gap-4 sm:gap-5">
+            <div
+              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-black/5 text-3xl shadow-sm sm:h-20 sm:w-20 sm:text-4xl"
+              style={{
+                backgroundColor: `${collectionColor}18`,
+              }}
+            >
+              {collection.icon || "📚"}
+            </div>
 
-                <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-                  {collection.name}
-                </h1>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kf-accent-ink">
+                Knowledge collection
+              </p>
 
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-                  {collection.description ||
-                    "Organize related documents and knowledge in one focused space."}
-                </p>
+              <h1 className="mt-2 truncate text-2xl font-bold tracking-tight text-kf-ink sm:text-3xl">
+                {collection.name}
+              </h1>
 
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-                  <span className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5">
-                    {documents.length}{" "}
-                    {documents.length === 1 ? "document" : "documents"}
-                  </span>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-kf-muted">
+                {collection.description ||
+                  "Organize related documents in one focused knowledge space."}
+              </p>
 
-                  <span>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="rounded-lg bg-kf-surface-muted px-3 py-1.5 text-xs font-medium text-kf-ink-soft">
+                  {collectionDocuments.length}{" "}
+                  {collectionDocuments.length === 1
+                    ? "document"
+                    : "documents"}
+                </span>
+
+                {collection.createdAt && (
+                  <span className="text-xs text-kf-faint">
                     Created {formatDate(collection.createdAt)}
                   </span>
-                </div>
+                )}
               </div>
             </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setShowAddModal(true);
-                void fetchDocuments();
-              }}
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
-            >
-              <span className="text-lg">+</span>
-              Add Documents
-            </button>
-          </div>
-        </section>
-
-        {/* Error */}
-        {error && (
-          <div className="mt-6 flex items-center justify-between rounded-xl border border-red-900/50 bg-red-950/20 px-4 py-3 text-sm text-red-300">
-            <span>{error}</span>
-
-            <button
-              type="button"
-              onClick={() => void fetchCollection()}
-              className="font-semibold text-red-200 hover:text-white"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
-        {/* Documents Section */}
-        <section className="mt-10">
-          <div className="mb-5 flex items-end justify-between">
-            <div>
-              <p className="text-sm font-medium text-zinc-500">
-                Knowledge
-              </p>
-
-              <h2 className="mt-1 text-xl font-semibold">
-                Documents in this collection
-              </h2>
-            </div>
-
-            <span className="text-sm text-zinc-600">
-              {documents.length} total
-            </span>
           </div>
 
-          {documents.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/50 px-6 py-20 text-center">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-3xl">
-                📂
-              </div>
+          <Button
+            onClick={openAddModal}
+            className="shrink-0"
+          >
+            <IconPlus size={16} />
+            Add documents
+          </Button>
+        </div>
+      </section>
 
-              <h3 className="text-xl font-semibold">
-                This collection is empty
-              </h3>
+      {/* Page error */}
+      {error && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-kf-error/20 bg-kf-error-soft px-4 py-4 text-sm text-kf-error sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold">Something went wrong</p>
+            <p className="mt-1 opacity-90">{error}</p>
+          </div>
 
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
-                Add documents from your library to start building this
-                knowledge space.
-              </p>
+          <button
+            type="button"
+            onClick={() => void fetchCollection()}
+            className="w-fit rounded-lg px-3 py-2 font-semibold hover:bg-white/60 hover:underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddModal(true);
-                  void fetchDocuments();
-                }}
-                className="mt-6 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500"
-              >
+      {/* Documents */}
+      <section>
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kf-accent-ink">
+              Library
+            </p>
+
+            <h2 className="mt-1 text-xl font-semibold text-kf-ink">
+              Documents in this collection
+            </h2>
+
+            <p className="mt-1 text-sm text-kf-muted">
+              Everything currently organized inside this knowledge space.
+            </p>
+          </div>
+
+          <span className="text-xs font-medium text-kf-muted">
+            {collectionDocuments.length} total
+          </span>
+        </div>
+
+        {collectionDocuments.length === 0 ? (
+          <EmptyState
+            icon={<IconFolder size={22} />}
+            title="This collection is empty"
+            description="Add documents from your library to start building this focused knowledge space."
+            action={
+              <Button onClick={openAddModal}>
+                <IconPlus size={16} />
                 Add your first document
-              </button>
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {documents.map((document) => (
+              </Button>
+            }
+          />
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-2">
+            {collectionDocuments.map((doc) => {
+              const extension = getFileExtension(
+                doc.originalName || "FILE",
+              );
+
+              return (
                 <article
-                  key={document._id}
-                  className="group rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 transition hover:border-zinc-700 hover:bg-zinc-950"
+                  key={doc._id}
+                  className="kf-card group relative overflow-hidden p-5 transition duration-200 hover:-translate-y-0.5 hover:border-kf-border-strong"
                 >
                   <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-2xl">
-                      {getDocumentIcon(document)}
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-kf-accent-soft text-[10px] font-bold uppercase tracking-wide text-kf-accent-ink">
+                      {extension}
                     </div>
 
                     <div className="min-w-0 flex-1">
                       <button
                         type="button"
-                        onClick={() => openDocument(document._id)}
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/documents/${doc._id}`,
+                          )
+                        }
                         className="block max-w-full text-left"
+                        aria-label={`Open ${doc.title}`}
                       >
-                        <h3 className="truncate text-base font-semibold text-zinc-100 transition group-hover:text-blue-400">
-                          {document.title}
+                        <h3 className="truncate text-base font-semibold text-kf-ink transition group-hover:text-kf-accent-ink">
+                          {doc.title}
                         </h3>
 
-                        <p className="mt-1 truncate text-xs text-zinc-600">
-                          {document.originalName || "Document"}
+                        <p className="mt-1 truncate text-xs text-kf-muted">
+                          {doc.originalName || "Document"}
                         </p>
                       </button>
 
                       <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <span className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-400">
-                          {documentTypeLabels[document.documentType]}
-                        </span>
+                        <Badge tone="neutral">
+                          {formatDocumentType(doc.documentType)}
+                        </Badge>
 
-                        <span
-                          className={`rounded-md px-2 py-1 text-[11px] ${
-                            document.status === "processed"
-                              ? "bg-emerald-500/10 text-emerald-400"
-                              : document.status === "failed"
-                                ? "bg-red-500/10 text-red-400"
-                                : "bg-amber-500/10 text-amber-400"
-                          }`}
-                        >
-                          {document.status}
-                        </span>
+                        <Badge tone={getDocumentStatusTone(doc.status)}>
+                          {getDocumentStatusLabel(doc.status)}
+                        </Badge>
 
-                        <span className="text-[11px] text-zinc-600">
-                          {formatFileSize(document.fileSize)}
+                        <span className="text-[11px] text-kf-muted">
+                          {formatBytes(doc.fileSize || 0)}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="mt-5 flex items-center justify-between border-t border-zinc-800 pt-4">
-                    <div className="flex items-center gap-2 text-xs text-zinc-600">
-                      <span>{formatDate(document.createdAt)}</span>
-
-                      {document.isFavorite && (
-                        <>
-                          <span>•</span>
-                          <span className="text-amber-400">★ Favorite</span>
-                        </>
-                      )}
-                    </div>
+                  <div className="mt-5 flex flex-col gap-3 border-t border-kf-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-xs text-kf-faint">
+                      {doc.createdAt ? formatDate(doc.createdAt) : ""}
+                    </span>
 
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openDocument(document._id)}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold text-blue-400 transition hover:bg-blue-500/10 hover:text-blue-300"
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        href={`/dashboard/documents/${doc._id}`}
                       >
                         Open
-                      </button>
+                        <IconArrowRight size={14} />
+                      </Button>
 
-                      <button
-                        type="button"
-                        disabled={removingDocumentId === document._id}
-                        onClick={() => void removeDocument(document._id)}
-                        className="rounded-lg px-3 py-2 text-xs font-medium text-zinc-500 transition hover:bg-red-950/40 hover:text-red-400 disabled:opacity-50"
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={removingDocumentId === doc._id}
+                        onClick={() => setRemoveTarget(doc)}
+                        className="text-kf-error hover:bg-kf-error-soft"
                       >
-                        {removingDocumentId === document._id
-                          ? "Removing..."
-                          : "Remove"}
-                      </button>
+                        Remove
+                      </Button>
                     </div>
                   </div>
                 </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
-      {/* Add Documents Modal */}
+      {/* Add documents modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-zinc-800 p-6">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-kf-ink/35 px-4 py-6 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowAddModal(false);
+            }
+          }}
+        >
+          <div
+            className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-kf-border bg-kf-surface shadow-[var(--kf-shadow)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-documents-title"
+          >
+            {/* Modal header */}
+            <div className="flex items-start justify-between gap-4 border-b border-kf-border p-6 sm:p-7">
               <div>
-                <p className="text-sm font-medium text-blue-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-kf-accent-ink">
                   Add to collection
                 </p>
 
-                <h2 className="mt-1 text-xl font-semibold">
-                  Choose Documents
+                <h2
+                  id="add-documents-title"
+                  className="mt-1 text-xl font-semibold text-kf-ink"
+                >
+                  Choose documents
                 </h2>
 
-                <p className="mt-1 text-sm text-zinc-500">
-                  Select documents from your library to add here.
+                <p className="mt-1.5 text-sm leading-5 text-kf-muted">
+                  Select documents from your library to add to{" "}
+                  <span className="font-medium text-kf-ink">
+                    {collection.name}
+                  </span>
+                  .
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="rounded-lg px-2 py-1 text-zinc-500 hover:bg-zinc-900 hover:text-white"
+                aria-label="Close add documents dialog"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg text-kf-faint transition hover:bg-kf-surface-muted hover:text-kf-ink"
               >
-                ✕
+                ×
               </button>
             </div>
 
-            {/* Modal Content */}
-            <div className="overflow-y-auto p-6">
+            {/* Modal body */}
+            <div className="overflow-y-auto p-5 sm:p-6">
               {documentsLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3, 4].map((item) => (
-                    <div
-                      key={item}
-                      className="h-16 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/60"
-                    />
-                  ))}
+                <div className="flex justify-center py-12">
+                  <Spinner label="Loading documents..." />
                 </div>
               ) : documentsError ? (
-                <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-5 text-center">
-                  <p className="text-sm text-red-300">
-                    {documentsError}
-                  </p>
+                <div className="rounded-xl border border-kf-error/15 bg-kf-error-soft p-5 text-center text-sm text-kf-error">
+                  <p>{documentsError}</p>
 
                   <button
                     type="button"
                     onClick={() => void fetchDocuments()}
-                    className="mt-4 text-sm font-semibold text-red-200 hover:text-white"
+                    className="mt-3 font-semibold hover:underline"
                   >
                     Retry
                   </button>
                 </div>
               ) : availableDocuments.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-zinc-800 px-6 py-12 text-center">
-                  <div className="text-3xl">✓</div>
-
-                  <h3 className="mt-4 font-semibold">
-                    All documents are already added
-                  </h3>
-
-                  <p className="mt-2 text-sm text-zinc-600">
-                    There are no other active documents available in
-                    your library.
-                  </p>
-                </div>
+                <EmptyState
+                  icon={<IconDocument size={20} />}
+                  title="All documents are already added"
+                  description="There are no other active documents available in your library."
+                />
               ) : (
                 <div className="space-y-3">
-                  {availableDocuments.map((document) => (
+                  {availableDocuments.map((doc) => (
                     <div
-                      key={document._id}
-                      className="flex items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 transition hover:border-zinc-700"
+                      key={doc._id}
+                      className="group flex flex-col gap-4 rounded-xl border border-kf-border p-4 transition hover:border-kf-border-strong hover:bg-kf-surface-muted/40 sm:flex-row sm:items-center"
                     >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-xl">
-                        {getDocumentIcon(document)}
-                      </div>
+                      <div className="flex min-w-0 flex-1 items-center gap-4">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-kf-accent-soft text-[10px] font-bold uppercase tracking-wide text-kf-accent-ink">
+                          {getFileExtension(doc.originalName || "FILE")}
+                        </div>
 
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate text-sm font-semibold">
-                          {document.title}
-                        </h3>
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-semibold text-kf-ink">
+                            {doc.title}
+                          </h3>
 
-                        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-zinc-600">
-                          <span>
-                            {documentTypeLabels[document.documentType]}
-                          </span>
-
-                          <span>•</span>
-
-                          <span>
-                            {formatFileSize(document.fileSize)}
-                          </span>
+                          <p className="mt-1 truncate text-[11px] text-kf-muted">
+                            {formatDocumentType(doc.documentType)} ·{" "}
+                            {formatBytes(doc.fileSize || 0)}
+                          </p>
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        disabled={addingDocumentId === document._id}
-                        onClick={() => void addDocument(document._id)}
-                        className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      <Button
+                        size="sm"
+                        disabled={addingDocumentId === doc._id}
+                        onClick={() => void addDocument(doc._id)}
+                        className="shrink-0"
                       >
-                        {addingDocumentId === document._id
+                        {addingDocumentId === doc._id
                           ? "Adding..."
                           : "Add"}
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="flex justify-end border-t border-zinc-800 p-5">
-              <button
-                type="button"
+            {/* Modal footer */}
+            <div className="flex justify-end border-t border-kf-border p-5">
+              <Button
+                variant="secondary"
                 onClick={() => setShowAddModal(false)}
-                className="rounded-xl border border-zinc-800 px-5 py-3 text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-white"
               >
                 Done
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
-    </main>
+
+      {/* Remove confirmation modal */}
+      {removeTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-kf-ink/35 px-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !removingDocumentId
+            ) {
+              setRemoveTarget(null);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-kf-border bg-kf-surface p-6 shadow-[var(--kf-shadow)] sm:p-7"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remove-document-title"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-kf-error-soft text-kf-error">
+              !
+            </div>
+
+            <h2
+              id="remove-document-title"
+              className="mt-5 text-xl font-semibold text-kf-ink"
+            >
+              Remove document?
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-kf-muted">
+              Remove{" "}
+              <span className="font-semibold text-kf-ink">
+                {removeTarget.title}
+              </span>{" "}
+              from this collection?
+              <span className="mt-1 block">
+                The document itself will remain in your library.
+              </span>
+            </p>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
+                disabled={Boolean(removingDocumentId)}
+                onClick={() => setRemoveTarget(null)}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                variant="danger"
+                disabled={Boolean(removingDocumentId)}
+                onClick={() =>
+                  void removeDocument(removeTarget._id)
+                }
+              >
+                {removingDocumentId === removeTarget._id
+                  ? "Removing..."
+                  : "Remove document"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
