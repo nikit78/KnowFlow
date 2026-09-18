@@ -284,6 +284,93 @@ export default function DocumentDetailPage() {
     }
   }
 
+  async function previewDocument() {
+    if (!document) return;
+
+    try {
+      setError("");
+
+      const response = await fetch(
+        `${API_URL}/documents/${document._id}/preview`,
+        {
+          method: "GET",
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.replace("/auth/login");
+          return;
+        }
+
+        throw new Error("Failed to preview document.");
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+
+      window.setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 60_000);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to preview document."
+      );
+    }
+  }
+
+  async function downloadDocument() {
+    if (!document) return;
+
+    try {
+      setError("");
+
+      const response = await fetch(
+        `${API_URL}/documents/${document._id}/download`,
+        {
+          method: "GET",
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.replace("/auth/login");
+          return;
+        }
+
+        throw new Error("Failed to download document.");
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = window.document.createElement("a");
+      link.href = blobUrl;
+      link.download = document.originalName;
+      link.style.display = "none";
+
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 60_000);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to download document."
+      );
+    }
+  }
+
   async function loadChunks() {
     if (!document || chunksLoading) return;
 
@@ -456,25 +543,20 @@ export default function DocumentDetailPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() =>
-                  window.open(
-                    `${API_URL}/documents/${document._id}/preview`,
-                    "_blank",
-                    "noopener,noreferrer",
-                  )
-                }
+                onClick={() => void previewDocument()}
               >
                 <IconEye size={14} />
                 Preview
               </Button>
 
-              <a
-                href={`${API_URL}/documents/${document._id}/download`}
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-[10px] border border-kf-border bg-kf-surface px-3 text-sm font-semibold text-kf-ink transition hover:bg-kf-surface-muted focus:outline-none focus:ring-2 focus:ring-kf-accent/20"
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void downloadDocument()}
               >
                 <IconDownload size={14} />
                 Download
-              </a>
+              </Button>
 
               <Button
                 variant="secondary"
